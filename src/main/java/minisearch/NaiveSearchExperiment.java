@@ -8,28 +8,52 @@ public class NaiveSearchExperiment {
                     + "threads protocols memory indexing queries latency consensus partitions services ").repeat(4);
 
     public static void main(String[] args) {
-        NaiveSearchEngine searchEngine = new NaiveSearchEngine();
+        NaiveSearchEngine naiveSearchEngine = new NaiveSearchEngine();
         DocumentPreprocessor preprocessor = new DocumentPreprocessor();
 
         for (int count : List.of(1_000, 10_000, 100_000)) {
             List<Document> documents = generateDocuments(count);
             List<PreparedDocument> preparedDocuments = preprocessor.prepare(documents);
+            IndexedSearchEngine indexedSearchEngine = new IndexedSearchEngine();
+
+            long indexStart = System.nanoTime();
+            for (Document document : documents) {
+                indexedSearchEngine.add(document);
+            }
+            long indexConstructionTime = System.nanoTime() - indexStart;
 
             for (int i = 0; i < 3; i++) {
-                searchEngine.search(preparedDocuments, "needle");
+                naiveSearchEngine.search(preparedDocuments, "needle");
+                indexedSearchEngine.search("needle");
             }
 
-            long totalElapsed = 0;
-            List<Document> results = List.of();
+            long naiveTotalElapsed = 0;
+            List<Document> naiveResults = List.of();
             for (int i = 0; i < 5; i++) {
                 long start = System.nanoTime();
-                results = searchEngine.search(preparedDocuments, "needle");
-                totalElapsed += System.nanoTime() - start;
+                naiveResults = naiveSearchEngine.search(preparedDocuments, "needle");
+                naiveTotalElapsed += System.nanoTime() - start;
+            }
+
+            long indexedTotalElapsed = 0;
+            List<Document> indexedResults = List.of();
+            for (int i = 0; i < 5; i++) {
+                long start = System.nanoTime();
+                indexedResults = indexedSearchEngine.search("needle");
+                indexedTotalElapsed += System.nanoTime() - start;
             }
 
             System.out.println("Documents: " + count);
-            System.out.println("Matches: " + results.size());
-            System.out.printf("Average query time: %.3f ms%n%n", totalElapsed / 5_000_000.0);
+            System.out.printf("Naive prepared scan query: %.3f ms%n", naiveTotalElapsed / 5_000_000.0);
+            System.out.printf("Index construction: %.3f ms%n", indexConstructionTime / 1_000_000.0);
+            System.out.printf("Indexed query: %.3f ms%n", indexedTotalElapsed / 5_000_000.0);
+            System.out.println("Matches: " + indexedResults.size());
+
+            if (naiveResults.size() != indexedResults.size()) {
+                throw new IllegalStateException("Search engines returned different match counts");
+            }
+
+            System.out.println();
         }
     }
 
