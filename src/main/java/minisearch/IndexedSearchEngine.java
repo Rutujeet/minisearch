@@ -21,18 +21,23 @@ public class IndexedSearchEngine {
     public void add(Document document) {
         documentsById.put(document.id(), document);
 
-        List<String> terms = preprocessor.prepare(document).terms();
-        documentLengths.put(document.id(), terms.size());
-        totalDocumentLength += terms.size();
+        List<String> titleTerms = preprocessor.tokenize(document.title());
+        List<String> bodyTerms = preprocessor.tokenize(document.body());
+        documentLengths.put(document.id(), titleTerms.size() + bodyTerms.size());
+        totalDocumentLength += titleTerms.size() + bodyTerms.size();
 
-        Map<String, Integer> termCounts = new HashMap<>();
-        for (String term : terms) {
-            termCounts.merge(term, 1, Integer::sum);
+        Map<String, List<Integer>> termPositions = new HashMap<>();
+        for (int position = 0; position < titleTerms.size(); position++) {
+            termPositions.computeIfAbsent(titleTerms.get(position), ignored -> new ArrayList<>()).add(position);
+        }
+        for (int position = 0; position < bodyTerms.size(); position++) {
+            termPositions.computeIfAbsent(bodyTerms.get(position), ignored -> new ArrayList<>())
+                    .add(titleTerms.size() + 1 + position);
         }
 
-        for (Map.Entry<String, Integer> termCount : termCounts.entrySet()) {
-            termToPostings.computeIfAbsent(termCount.getKey(), ignored -> new ArrayList<>())
-                    .add(new Posting(document.id(), termCount.getValue()));
+        for (Map.Entry<String, List<Integer>> termPosition : termPositions.entrySet()) {
+            termToPostings.computeIfAbsent(termPosition.getKey(), ignored -> new ArrayList<>())
+                    .add(new Posting(document.id(), termPosition.getValue().size(), termPosition.getValue()));
         }
     }
 
@@ -64,6 +69,69 @@ public class IndexedSearchEngine {
             results.add(documentsById.get(documentId));
         }
         return results;
+    }
+
+    public List<Document> searchPhrase(String phrase) {
+        List<String> phraseTerms = preprocessor.tokenize(phrase);
+        Set<Integer> candidates = null;
+
+        for (String term : phraseTerms) {
+            List<Posting> postings = termToPostings.get(term);
+            if (postings == null) {
+                return List.of();
+            }
+
+            Set<Integer> documentIds = new HashSet<>();
+            for (Posting posting : postings) {
+                documentIds.add(posting.documentId());
+            }
+            if (candidates == null) {
+                candidates = documentIds;
+            } else {
+                candidates.retainAll(documentIds);
+            }
+        }
+
+        if (candidates == null) {
+            return List.of();
+        }
+
+        List<Integer> documentIds = new ArrayList<>(candidates);
+        documentIds.sort(Integer::compareTo);
+        List<Document> results = new ArrayList<>();
+        for (Integer documentId : documentIds) {
+            if (containsPhrase(documentId, phraseTerms)) {
+                results.add(documentsById.get(documentId));
+            }
+        }
+        return results;
+    }
+
+    private boolean containsPhrase(int documentId, List<String> phraseTerms) {
+        Posting firstTermPosting = postingFor(documentId, phraseTerms.getFirst());
+        for (int startPosition : firstTermPosting.positions()) {
+            boolean matches = true;
+            for (int termIndex = 1; termIndex < phraseTerms.size(); termIndex++) {
+                Posting posting = postingFor(documentId, phraseTerms.get(termIndex));
+                if (posting == null || !posting.positions().contains(startPosition + termIndex)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Posting postingFor(int documentId, String term) {
+        for (Posting posting : termToPostings.get(term)) {
+            if (posting.documentId() == documentId) {
+                return posting;
+            }
+        }
+        return null;
     }
 
     private double bm25Score(int termFrequency, int documentFrequency, int documentLength) {

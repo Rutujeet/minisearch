@@ -147,6 +147,53 @@ class IndexedSearchEngineTest {
     }
 
     @Test
+    void phraseSearchRequiresTermsToBeAdjacentAndInOrder() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document exact = new Document(1, "Exact", "distributed systems handle failures");
+        Document separated = new Document(2, "Separated", "distributed databases connect many systems");
+        searchEngine.add(exact);
+        searchEngine.add(separated);
+
+        assertEquals(List.of(exact), searchEngine.searchPhrase("distributed systems"));
+    }
+
+    @Test
+    void phraseSearchRejectsTermsInTheWrongOrder() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        searchEngine.add(new Document(1, "Wrong order", "systems distributed across regions"));
+
+        assertEquals(List.of(), searchEngine.searchPhrase("distributed systems"));
+    }
+
+    @Test
+    void phraseSearchReturnsARepeatedPhraseOnlyOnce() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document document = new Document(1, "Repeated", "distributed systems and distributed systems");
+        searchEngine.add(document);
+
+        assertEquals(List.of(document), searchEngine.searchPhrase("distributed systems"));
+    }
+
+    @Test
+    void phraseSearchRequiresAllThreeTermsToBeAdjacent() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document exact = new Document(1, "Exact", "large distributed systems are useful");
+        Document separated = new Document(2, "Separated", "large distributed reliable systems");
+        searchEngine.add(exact);
+        searchEngine.add(separated);
+
+        assertEquals(List.of(exact), searchEngine.searchPhrase("large distributed systems"));
+    }
+
+    @Test
+    void phraseSearchDoesNotCrossTheTitleAndBodyBoundary() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        searchEngine.add(new Document(1, "Distributed", "Systems are difficult"));
+
+        assertEquals(List.of(), searchEngine.searchPhrase("distributed systems"));
+    }
+
+    @Test
     void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document document = new Document(1, "java", "");

@@ -4,14 +4,14 @@
 
 MiniSearch is an in-memory Java search engine built in small steps. It keeps
 documents by ID and an inverted index that maps each normalized term to a
-posting list. A posting contains a document ID and that term's frequency in
-the document.
+posting list. A posting contains a document ID, that term's frequency, and
+the token positions where it occurs in the document.
 
 ```mermaid
 flowchart TD
     A[Documents: ID, title, body] --> B[Lowercase and split on whitespace]
     B --> C[Count each term per document]
-    C --> D[Inverted index: term → postings]
+    C --> D[Inverted index: term → postings with positions]
     Q[Query] --> E[Lowercase and split on whitespace]
     E --> F[Look up each unique term]
     D --> F
@@ -30,6 +30,7 @@ flowchart LR
     D -->|Problem: all matches have equal weight| E[Store term frequency in postings]
     E -->|Problem: common terms overpower rare terms| F[TF-IDF ranking]
     F -->|Problem: repeated terms and long documents inflate scores| G[BM25 ranking]
+    G -->|Problem: term order and adjacency are unknown| H[Positional postings]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -40,6 +41,7 @@ flowchart LR
 | Term frequency | One and many occurrences are treated the same. | Store one posting per document-term with its TF. |
 | TF-IDF | Common terms can dominate rare, useful terms. | Score each posting as `TF × ln(N / df)`. |
 | BM25 | Raw TF-IDF gives unlimited weight to repetition and favors long documents. | Saturate term frequency and normalize by document length. |
+| Positional postings | A term-only index cannot tell whether query terms are adjacent and ordered. | Store every token position in each posting. |
 
 ## Current ranking
 
@@ -55,11 +57,26 @@ token length and the total indexed token count to calculate the average.
 
 Results with the same score are ordered by lower document ID.
 
+## Phrase search
+
+`searchPhrase("distributed systems")` looks for those terms next to each
+other and in that order. It first uses the inverted index to find documents
+that contain every phrase term. It then checks their stored positions. For
+example, positions `0` for `distributed` and `1` for `systems` match; positions
+`0` and `4` do not.
+
+Title and body tokens are indexed separately for phrase matching. A one-token
+gap between the two fields prevents a phrase from matching across their
+boundary. Phrase results are returned by document ID; they do not receive a
+BM25 boost.
+
 ## Current limits
 
 - All documents and index data are in memory.
 - Tokenization only lowercases and splits on whitespace; punctuation remains.
-- Queries use OR semantics; phrase and AND queries are not supported.
+- Keyword queries use OR semantics. Exact phrase queries use the separate
+  `searchPhrase` operation; phrase scoring, quotation-mark parsing, and AND
+  queries are not supported.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance
