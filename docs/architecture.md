@@ -15,7 +15,7 @@ flowchart TD
     Q[Query] --> E[Lowercase and split on whitespace]
     E --> F[Look up each unique term]
     D --> F
-    F --> G[Score matching documents: Σ TF × IDF]
+    F --> G[Score matching documents with BM25]
     G --> H[Sort: score descending, document ID ascending]
     H --> R[Matching documents]
 ```
@@ -29,6 +29,7 @@ flowchart LR
     C -->|Problem: matching is not ranking| D[Count matching query terms]
     D -->|Problem: all matches have equal weight| E[Store term frequency in postings]
     E -->|Problem: common terms overpower rare terms| F[TF-IDF ranking]
+    F -->|Problem: repeated terms and long documents inflate scores| G[BM25 ranking]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -38,23 +39,27 @@ flowchart LR
 | Multi-term ranking | OR matches have no useful order. | Rank by matched query terms. |
 | Term frequency | One and many occurrences are treated the same. | Store one posting per document-term with its TF. |
 | TF-IDF | Common terms can dominate rare, useful terms. | Score each posting as `TF × ln(N / df)`. |
+| BM25 | Raw TF-IDF gives unlimited weight to repetition and favors long documents. | Saturate term frequency and normalize by document length. |
 
 ## Current ranking
 
-For every unique query term, MiniSearch reads its postings. For a posting,
-the engine adds:
+For every unique query term, MiniSearch reads its postings and adds a BM25
+score. BM25 gives a larger score to rare terms, but repeated occurrences add
+less value each time. It also compares a document's token count with the
+average token count in the collection, so a match in a long document needs
+more evidence than the same match in a short document.
 
-`termFrequency × ln(totalDocuments / documentFrequency)`
+MiniSearch uses `k1 = 1.2` to control term-frequency saturation and
+`b = 0.75` to control document-length normalization. It stores each document's
+token length and the total indexed token count to calculate the average.
 
-`documentFrequency` is the number of postings for the term. Results with the
-same score are ordered by lower document ID.
+Results with the same score are ordered by lower document ID.
 
 ## Current limits
 
 - All documents and index data are in memory.
 - Tokenization only lowercases and splits on whitespace; punctuation remains.
 - Queries use OR semantics; phrase and AND queries are not supported.
-- Scores do not account for document length or repeated-term saturation.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance
