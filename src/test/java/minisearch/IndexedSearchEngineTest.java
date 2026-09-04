@@ -194,6 +194,73 @@ class IndexedSearchEngineTest {
     }
 
     @Test
+    void andSearchRequiresBothTerms() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java", "");
+        Document second = new Document(2, "java concurrency", "");
+        Document third = new Document(4, "java concurrency", "");
+        Document fourth = new Document(5, "concurrency", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+
+        assertEquals(List.of(second, third), searchEngine.searchAnd("java", "concurrency"));
+    }
+
+    @Test
+    void orSearchReturnsTheUnionWithoutDuplicates() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java", "");
+        Document second = new Document(2, "java concurrency", "");
+        Document third = new Document(4, "java concurrency", "");
+        Document fourth = new Document(5, "concurrency", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+
+        assertEquals(List.of(first, second, third, fourth), searchEngine.searchOr("java", "concurrency"));
+    }
+
+    @Test
+    void andNotSearchExcludesDocumentsContainingTheSecondTerm() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java", "");
+        Document second = new Document(2, "java spring", "");
+        Document third = new Document(4, "java", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+
+        assertEquals(List.of(first, third), searchEngine.searchAndNot("java", "spring"));
+    }
+
+    @Test
+    void booleanSearchHandlesUnknownTerms() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document document = new Document(1, "java", "");
+        searchEngine.add(document);
+
+        assertEquals(List.of(), searchEngine.searchAnd("java", "unknown"));
+        assertEquals(List.of(document), searchEngine.searchOr("java", "unknown"));
+        assertEquals(List.of(document), searchEngine.searchAndNot("java", "unknown"));
+    }
+
+    @Test
+    void booleanSearchReturnsResultsInAscendingDocumentIdOrder() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(20, "java", "");
+        Document second = new Document(3, "java", "");
+        Document third = new Document(11, "java", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+
+        assertEquals(List.of(second, third, first), searchEngine.searchOr("java", "unknown"));
+    }
+
+    @Test
     void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document document = new Document(1, "java", "");

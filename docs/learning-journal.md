@@ -48,3 +48,35 @@ defaults are `k1 = 1.2` and `b = 0.75`.
 Ranking requires more collection statistics and two parameters, `k1` and `b`.
 Scores are more complex to explain than raw TF-IDF, but correspond better to
 the relevance problem exposed by the test corpus.
+
+## Boolean query operations
+
+### Problem
+
+Normal search uses OR-like matching and phrase search requires adjacency, but
+there was no way to require non-adjacent terms or exclude a term.
+
+### First implementation
+
+The first AND intersection checked each document ID in one posting list with
+`contains()` on the other list.
+
+### Evidence
+
+With two sorted lists of 50,000 IDs and 37,500 shared IDs, the naive scan took
+1,231 ms in a one-off local run. A two-pointer scan over the same lists took
+966 ms. This is not a benchmark, but it shows the repeated list scans are real
+work.
+
+### New design
+
+Posting lists are maintained in ascending document-ID order. Intersection,
+union, and difference use forward pointer scans. `searchAnd`, `searchOr`, and
+`searchAndNot` return their Boolean matches in document-ID order without BM25
+scoring.
+
+### Tradeoffs
+
+Sortedness is now an index invariant. The simple incremental index sorts a
+posting list after every append; batch indexing or ordered insertion can be
+added if indexing cost becomes a problem.

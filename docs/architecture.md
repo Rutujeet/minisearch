@@ -5,7 +5,8 @@
 MiniSearch is an in-memory Java search engine built in small steps. It keeps
 documents by ID and an inverted index that maps each normalized term to a
 posting list. A posting contains a document ID, that term's frequency, and
-the token positions where it occurs in the document.
+the token positions where it occurs in the document. Posting lists are kept in
+ascending document-ID order.
 
 ```mermaid
 flowchart TD
@@ -31,6 +32,7 @@ flowchart LR
     E -->|Problem: common terms overpower rare terms| F[TF-IDF ranking]
     F -->|Problem: repeated terms and long documents inflate scores| G[BM25 ranking]
     G -->|Problem: term order and adjacency are unknown| H[Positional postings]
+    H -->|Problem: require or exclude non-adjacent terms| I[Boolean posting operations]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -42,6 +44,7 @@ flowchart LR
 | TF-IDF | Common terms can dominate rare, useful terms. | Score each posting as `TF × ln(N / df)`. |
 | BM25 | Raw TF-IDF gives unlimited weight to repetition and favors long documents. | Saturate term frequency and normalize by document length. |
 | Positional postings | A term-only index cannot tell whether query terms are adjacent and ordered. | Store every token position in each posting. |
+| Boolean operations | OR matching and phrases cannot express required or excluded terms. | Merge sorted postings for intersection, union, and difference. |
 
 ## Current ranking
 
@@ -70,13 +73,24 @@ gap between the two fields prevents a phrase from matching across their
 boundary. Phrase results are returned by document ID; they do not receive a
 BM25 boost.
 
+## Boolean search
+
+`searchAnd("java", "concurrency")` returns documents containing both terms.
+`searchOr` returns documents containing either term. `searchAndNot("java",
+"spring")` returns documents containing `java` but not `spring`.
+
+These operations merge sorted posting lists with forward pointers. They return
+documents in ascending document-ID order and do not use BM25, because they
+answer whether a document satisfies a condition rather than how relevant it is.
+
 ## Current limits
 
 - All documents and index data are in memory.
 - Tokenization only lowercases and splits on whitespace; punctuation remains.
 - Keyword queries use OR semantics. Exact phrase queries use the separate
-  `searchPhrase` operation; phrase scoring, quotation-mark parsing, and AND
-  queries are not supported.
+  `searchPhrase` operation. Boolean queries use `searchAnd`, `searchOr`, and
+  `searchAndNot`; quotation-mark parsing, parentheses, and a general query
+  parser are not supported.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance

@@ -36,8 +36,11 @@ public class IndexedSearchEngine {
         }
 
         for (Map.Entry<String, List<Integer>> termPosition : termPositions.entrySet()) {
-            termToPostings.computeIfAbsent(termPosition.getKey(), ignored -> new ArrayList<>())
-                    .add(new Posting(document.id(), termPosition.getValue().size(), termPosition.getValue()));
+            List<Posting> postings = termToPostings.computeIfAbsent(
+                    termPosition.getKey(), ignored -> new ArrayList<>());
+            postings.add(new Posting(document.id(), termPosition.getValue().size(), termPosition.getValue()));
+            // ponytail: sort after each append; batch or insert in order if indexing cost matters.
+            postings.sort(Comparator.comparingInt(Posting::documentId));
         }
     }
 
@@ -107,6 +110,21 @@ public class IndexedSearchEngine {
         return results;
     }
 
+    public List<Document> searchAnd(String firstTerm, String secondTerm) {
+        return documentsFor(PostingListOperations.intersection(
+                postingsFor(firstTerm), postingsFor(secondTerm)));
+    }
+
+    public List<Document> searchOr(String firstTerm, String secondTerm) {
+        return documentsFor(PostingListOperations.union(
+                postingsFor(firstTerm), postingsFor(secondTerm)));
+    }
+
+    public List<Document> searchAndNot(String requiredTerm, String excludedTerm) {
+        return documentsFor(PostingListOperations.difference(
+                postingsFor(requiredTerm), postingsFor(excludedTerm)));
+    }
+
     private boolean containsPhrase(int documentId, List<String> phraseTerms) {
         Posting firstTermPosting = postingFor(documentId, phraseTerms.getFirst());
         for (int startPosition : firstTermPosting.positions()) {
@@ -132,6 +150,18 @@ public class IndexedSearchEngine {
             }
         }
         return null;
+    }
+
+    private List<Posting> postingsFor(String term) {
+        return termToPostings.getOrDefault(preprocessor.tokenize(term).getFirst(), List.of());
+    }
+
+    private List<Document> documentsFor(List<Integer> documentIds) {
+        List<Document> results = new ArrayList<>();
+        for (Integer documentId : documentIds) {
+            results.add(documentsById.get(documentId));
+        }
+        return results;
     }
 
     private double bm25Score(int termFrequency, int documentFrequency, int documentLength) {
