@@ -14,9 +14,10 @@ public class Main {
         );
 
         NaiveSearchEngine searchEngine = new NaiveSearchEngine();
-        printResults("redis", searchEngine.search(documents, "redis"));
-        printResults("java", searchEngine.search(documents, "java"));
-        printResults("distributed", searchEngine.search(documents, "distributed"));
+        List<PreparedDocument> preparedDocuments = new DocumentPreprocessor().prepare(documents);
+        printResults("redis", searchEngine.search(preparedDocuments, "redis"));
+        printResults("java", searchEngine.search(preparedDocuments, "java"));
+        printResults("distributed", searchEngine.search(preparedDocuments, "distributed"));
     }
 
     private static void printResults(String query, List<Document> results) {

@@ -9,19 +9,21 @@ public class NaiveSearchExperiment {
 
     public static void main(String[] args) {
         NaiveSearchEngine searchEngine = new NaiveSearchEngine();
+        DocumentPreprocessor preprocessor = new DocumentPreprocessor();
 
         for (int count : List.of(1_000, 10_000, 100_000)) {
             List<Document> documents = generateDocuments(count);
+            List<PreparedDocument> preparedDocuments = preprocessor.prepare(documents);
 
             for (int i = 0; i < 3; i++) {
-                searchEngine.search(documents, "needle");
+                searchEngine.search(preparedDocuments, "needle");
             }
 
             long totalElapsed = 0;
             List<Document> results = List.of();
             for (int i = 0; i < 5; i++) {
                 long start = System.nanoTime();
-                results = searchEngine.search(documents, "needle");
+                results = searchEngine.search(preparedDocuments, "needle");
                 totalElapsed += System.nanoTime() - start;
             }
 
