@@ -60,4 +60,38 @@ class IndexedSearchEngineTest {
 
         assertEquals(List.of(document), searchEngine.search("redis"));
     }
+
+    @Test
+    void ranksDocumentsByTheNumberOfQueryTermsTheyMatch() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "Java concurrency", "Threads and executors.");
+        Document second = new Document(2, "Java collections", "Lists and streams.");
+        Document third = new Document(3, "Concurrency patterns", "Distributed systems.");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+
+        assertEquals(List.of(first, second, third), searchEngine.search("java concurrency"));
+    }
+
+    @Test
+    void keepsSingleTermSearchBehavior() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "Java concurrency", "Threads and executors.");
+        Document second = new Document(2, "Java collections", "Lists and streams.");
+        Document third = new Document(3, "Concurrency patterns", "Distributed systems.");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+
+        assertEquals(List.of(first, second), searchEngine.search("java"));
+    }
+
+    @Test
+    void returnsNothingWhenAllQueryTermsAreUnknown() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        searchEngine.add(new Document(1, "Java concurrency", "Threads and executors."));
+
+        assertEquals(List.of(), searchEngine.search("golang kubernetes"));
+    }
 }

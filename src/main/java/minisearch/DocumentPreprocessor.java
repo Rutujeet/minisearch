@@ -7,8 +7,8 @@ import java.util.Locale;
 public class DocumentPreprocessor {
     public PreparedDocument prepare(Document document) {
         List<String> terms = new ArrayList<>();
-        addTerms(document.title(), terms);
-        addTerms(document.body(), terms);
+        terms.addAll(tokenize(document.title()));
+        terms.addAll(tokenize(document.body()));
         return new PreparedDocument(document, terms);
     }
 
@@ -20,9 +20,11 @@ public class DocumentPreprocessor {
         return preparedDocuments;
     }
 
-    private void addTerms(String text, List<String> terms) {
+    public List<String> tokenize(String text) {
+        List<String> terms = new ArrayList<>();
         for (String term : text.toLowerCase(Locale.ROOT).split("\\s+")) {
             terms.add(term);
         }
+        return terms;
     }
 }
