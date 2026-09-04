@@ -108,3 +108,33 @@ runs:
 At 100K unique terms, the full vocabulary scan remained under 10 ms in this
 exploratory benchmark, so a more complex prefix data structure was not yet
 justified.
+
+## Single-file persistence
+
+### Problem
+
+The complete index lived only in RAM, so stopping the process lost all
+searchable state.
+
+### New design
+
+`IndexStorage` writes one versioned binary file using `DataOutputStream` and
+reconstructs an engine using `DataInputStream`. It persists documents,
+document lengths, total indexed token length, terms, postings, term frequency,
+and positions. Average document length and sorted vocabulary are rebuilt from
+that state.
+
+### Evidence
+
+| Documents | Save | Load | File size |
+| ---: | ---: | ---: | ---: |
+| 1K | 69.067 ms | 35.789 ms | 0.250 MB |
+| 10K | 312.438 ms | 175.281 ms | 2.523 MB |
+| 100K | 2672.157 ms | 1592.068 ms | 25.428 MB |
+
+### Tradeoffs
+
+The single file is easy to understand and supports exact round trips, but any
+save rewrites the entire index and any load reconstructs the complete in-memory
+structure. More incremental storage is not justified until that becomes a
+measured problem.

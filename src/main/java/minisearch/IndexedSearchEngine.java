@@ -190,6 +190,32 @@ public class IndexedSearchEngine {
         return new SortedVocabulary(termToPostings.keySet());
     }
 
+    IndexSnapshot snapshot() {
+        List<StoredDocument> documents = new ArrayList<>();
+        for (Map.Entry<Integer, Document> entry : documentsById.entrySet()) {
+            documents.add(new StoredDocument(entry.getValue(), documentLengths.get(entry.getKey())));
+        }
+
+        Map<String, List<Posting>> postings = new HashMap<>();
+        for (Map.Entry<String, List<Posting>> entry : termToPostings.entrySet()) {
+            postings.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return new IndexSnapshot(documents, postings, totalDocumentLength);
+    }
+
+    static IndexedSearchEngine fromSnapshot(IndexSnapshot snapshot) {
+        IndexedSearchEngine engine = new IndexedSearchEngine();
+        for (StoredDocument stored : snapshot.documents()) {
+            engine.documentsById.put(stored.document().id(), stored.document());
+            engine.documentLengths.put(stored.document().id(), stored.documentLength());
+        }
+        for (Map.Entry<String, List<Posting>> entry : snapshot.postings().entrySet()) {
+            engine.termToPostings.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        engine.totalDocumentLength = snapshot.totalDocumentLength();
+        return engine;
+    }
+
     private boolean containsPhrase(int documentId, List<String> phraseTerms) {
         Posting firstTermPosting = postingFor(documentId, phraseTerms.getFirst());
         for (int startPosition : firstTermPosting.positions()) {

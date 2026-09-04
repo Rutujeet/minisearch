@@ -35,6 +35,7 @@ flowchart LR
     H -->|Problem: require or exclude non-adjacent terms| I[Boolean posting operations]
     I -->|Problem: only a few ranked results are needed| J[Bounded top-K heap]
     J -->|Problem: users type incomplete terms| K[Scan indexed vocabulary]
+    K -->|Problem: restart loses the index| L[Single-file persistence]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -49,6 +50,7 @@ flowchart LR
 | Boolean operations | OR matching and phrases cannot express required or excluded terms. | Merge sorted postings for intersection, union, and difference. |
 | Top-K results | Sorting every match wastes work when a caller asks for only a few results. | Keep the best K scored documents in a bounded min-heap. |
 | Autocomplete | Exact-term lookup cannot suggest terms for an incomplete prefix. | Scan the existing indexed vocabulary for matching prefixes. |
+| Persistence | Process restarts lose all indexed state. | Save and load one complete versioned binary index file. |
 
 ## Current ranking
 
@@ -143,6 +145,28 @@ At 1M terms the single query remains under 30 ms, but the typing sequence
 performs eleven scans and reaches about 340 ms. The experiment exposes that
 cost without choosing a replacement data structure yet.
 
+## Persistence
+
+`IndexStorage` saves and loads the complete in-memory index in one binary file.
+The file starts with a magic value and format version, followed by documents
+and their token lengths, total indexed token length, and term postings with
+term frequency and positions. This is enough to reconstruct normal, phrase,
+and Boolean search exactly after a restart.
+
+Average document length and sorted vocabulary are derived after loading. They
+are not stored because they can be rebuilt from persisted source state.
+
+| Documents | Save time | Load time | File size |
+| ---: | ---: | ---: | ---: |
+| 1K | 69.067 ms | 35.789 ms | 0.250 MB |
+| 10K | 312.438 ms | 175.281 ms | 2.523 MB |
+| 100K | 2672.157 ms | 1592.068 ms | 25.428 MB |
+
+The experiment builds the deterministic corpus before timing. Save and load
+measure only the single-file operation. This design has no WAL, segments,
+background flush, merge, compression, or recovery. Saving a changed index
+rewrites the whole file, and loading restores the whole file into memory.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each
@@ -175,6 +199,7 @@ answer whether a document satisfies a condition rather than how relevant it is.
   `searchAndNot`; quotation-mark parsing, parentheses, and a general query
   parser are not supported.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
+- Persistence rewrites and reloads one complete index file.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance
