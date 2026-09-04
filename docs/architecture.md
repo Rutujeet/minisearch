@@ -33,6 +33,7 @@ flowchart LR
     F -->|Problem: repeated terms and long documents inflate scores| G[BM25 ranking]
     G -->|Problem: term order and adjacency are unknown| H[Positional postings]
     H -->|Problem: require or exclude non-adjacent terms| I[Boolean posting operations]
+    I -->|Problem: only a few ranked results are needed| J[Bounded top-K heap]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -45,6 +46,7 @@ flowchart LR
 | BM25 | Raw TF-IDF gives unlimited weight to repetition and favors long documents. | Saturate term frequency and normalize by document length. |
 | Positional postings | A term-only index cannot tell whether query terms are adjacent and ordered. | Store every token position in each posting. |
 | Boolean operations | OR matching and phrases cannot express required or excluded terms. | Merge sorted postings for intersection, union, and difference. |
+| Top-K results | Sorting every match wastes work when a caller asks for only a few results. | Keep the best K scored documents in a bounded min-heap. |
 
 ## Current ranking
 
@@ -64,8 +66,8 @@ Results with the same score are ordered by lower document ID.
 
 ### Problem
 
-The caller requested only the top 10 results, but search still fully sorted
-every matching document.
+The caller requested only the top 10 results, but search originally fully
+sorted every matching document.
 
 ### Evidence
 
@@ -80,6 +82,33 @@ Full sort + take 10:
 The experiment includes scoring as well as sorting, so it does not isolate
 sorting cost. At this scale the latency is still reasonable; the concern is
 that fully ordering M results performs work the caller does not need.
+
+### New design
+
+`search(query, limit)` still scores every matching document with BM25. While
+scoring, it keeps at most `limit` candidates in a min-heap. The heap root is
+the weakest current result: the lowest score, or the highest document ID when
+scores tie. A better candidate replaces that root. The final winners are then
+sorted by score descending and document ID ascending.
+
+This changes selection from sorting all M matches, `O(M log M)`, to maintaining
+at most K winners, `O(M log K)`. It does not avoid BM25 scoring for all M
+matching documents.
+
+### Comparison
+
+Both experiments use the same generated corpus, query (`java`), limit (10),
+three warmup runs, and five measured runs.
+
+| Matches | Full sort + take 10 | Top-K heap |
+| ---: | ---: | ---: |
+| 1K | 1.581 ms | 1.426 ms |
+| 10K | 10.246 ms | 9.433 ms |
+| 100K | 26.203 ms | 18.417 ms |
+
+At 100K matches the improvement is useful but not dramatic because scoring is
+still required for every match. The heap removes only the unnecessary complete
+ordering of losing results.
 
 ## Phrase search
 

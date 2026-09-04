@@ -6,11 +6,16 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 public class IndexedSearchEngine {
     private static final double K1 = 1.2;
     private static final double B = 0.75;
+    private static final Comparator<ScoredDocument> BEST_FIRST = Comparator
+            .comparingDouble(ScoredDocument::score)
+            .reversed()
+            .thenComparingInt(ScoredDocument::documentId);
 
     private final Map<Integer, Document> documentsById = new HashMap<>();
     private final Map<Integer, Integer> documentLengths = new HashMap<>();
@@ -73,10 +78,9 @@ public class IndexedSearchEngine {
             }
         }
 
-        List<Integer> documentIds = new ArrayList<>(scores.keySet());
-        documentIds.sort(Comparator.<Integer, Double>comparing(scores::get)
-                .reversed()
-                .thenComparing(Integer::intValue));
+        List<Integer> documentIds = limit >= scores.size()
+                ? rankedDocumentIds(scores)
+                : topDocumentIds(scores, limit);
 
         List<Document> results = new ArrayList<>();
         int resultCount = Math.min(limit, documentIds.size());
@@ -84,6 +88,35 @@ public class IndexedSearchEngine {
             results.add(documentsById.get(documentIds.get(index)));
         }
         return results;
+    }
+
+    private List<Integer> rankedDocumentIds(Map<Integer, Double> scores) {
+        List<Integer> documentIds = new ArrayList<>(scores.keySet());
+        documentIds.sort(Comparator.<Integer, Double>comparing(scores::get)
+                .reversed()
+                .thenComparing(Integer::intValue));
+        return documentIds;
+    }
+
+    private List<Integer> topDocumentIds(Map<Integer, Double> scores, int limit) {
+        PriorityQueue<ScoredDocument> topK = new PriorityQueue<>(BEST_FIRST.reversed());
+        for (Map.Entry<Integer, Double> score : scores.entrySet()) {
+            ScoredDocument candidate = new ScoredDocument(score.getKey(), score.getValue());
+            if (topK.size() < limit) {
+                topK.add(candidate);
+            } else if (BEST_FIRST.compare(candidate, topK.peek()) < 0) {
+                topK.poll();
+                topK.add(candidate);
+            }
+        }
+
+        List<ScoredDocument> winners = new ArrayList<>(topK);
+        winners.sort(BEST_FIRST);
+        List<Integer> documentIds = new ArrayList<>();
+        for (ScoredDocument winner : winners) {
+            documentIds.add(winner.documentId());
+        }
+        return documentIds;
     }
 
     public List<Document> searchPhrase(String phrase) {
@@ -183,5 +216,8 @@ public class IndexedSearchEngine {
                 / (documentFrequency + 0.5));
         double lengthNormalization = 1 - B + B * documentLength / averageDocumentLength;
         return idf * termFrequency * (K1 + 1) / (termFrequency + K1 * lengthNormalization);
+    }
+
+    private record ScoredDocument(int documentId, double score) {
     }
 }

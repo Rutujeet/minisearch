@@ -280,6 +280,33 @@ class IndexedSearchEngineTest {
     }
 
     @Test
+    void searchLimitPrefersLowerDocumentIdsAtTheBoundaryOfATie() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(8, "java", "");
+        Document second = new Document(3, "java", "");
+        Document third = new Document(20, "java", "");
+        Document fourth = new Document(1, "java", "");
+        Document fifth = new Document(7, "java", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+        searchEngine.add(fifth);
+
+        assertEquals(List.of(fourth, second, fifth), searchEngine.search("java", 3));
+    }
+
+    @Test
+    void unlimitedAndVeryLargeLimitsHaveTheSameOrdering() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        searchEngine.add(new Document(1, "java", ""));
+        searchEngine.add(new Document(2, "java java", ""));
+        searchEngine.add(new Document(3, "java java java", ""));
+
+        assertEquals(searchEngine.search("java"), searchEngine.search("java", 1_000));
+    }
+
+    @Test
     void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document document = new Document(1, "java", "");

@@ -28,7 +28,7 @@ public class TopResultsExperiment {
             if (results.size() != 10) {
                 throw new IllegalStateException("Expected ten results");
             }
-            System.out.printf("%d documents, full sort + take 10: %.3f ms%n",
+            System.out.printf("%d documents, top-K heap: %.3f ms%n",
                     count, totalElapsed / 5_000_000.0);
         }
     }
