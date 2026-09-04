@@ -27,7 +27,7 @@ class NaiveSearchEngineTest {
     void ignoresCase() {
         Document document = new Document(1, "Redis guide", "An in-memory data store.");
 
-        assertEquals(List.of(document), searchEngine.search(List.of(document), "redis"));
+        assertEquals(List.of(document), searchEngine.search(List.of(document), "ReDiS"));
     }
 
     @Test
