@@ -307,6 +307,17 @@ class IndexedSearchEngineTest {
     }
 
     @Test
+    void suggestionsScanKnownTermsByCaseInsensitivePrefix() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        searchEngine.add(new Document(1, "distributed distribution distance", ""));
+        searchEngine.add(new Document(2, "database docker distributed", ""));
+
+        assertEquals(List.of("distributed", "distribution"), searchEngine.suggest("DisTr", 10));
+        assertEquals(List.of("distributed"), searchEngine.suggest("distr", 1));
+        assertEquals(List.of(), searchEngine.suggest("unknown", 10));
+    }
+
+    @Test
     void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document document = new Document(1, "java", "");

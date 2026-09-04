@@ -170,6 +170,22 @@ public class IndexedSearchEngine {
                 postingsFor(requiredTerm), postingsFor(excludedTerm)));
     }
 
+    public List<String> suggest(String prefix, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
+        String normalizedPrefix = preprocessor.tokenize(prefix).getFirst();
+        List<String> suggestions = new ArrayList<>();
+        for (String term : termToPostings.keySet()) {
+            if (term.startsWith(normalizedPrefix)) {
+                suggestions.add(term);
+            }
+        }
+        suggestions.sort(String::compareTo);
+        return new ArrayList<>(suggestions.subList(0, Math.min(limit, suggestions.size())));
+    }
+
     private boolean containsPhrase(int documentId, List<String> phraseTerms) {
         Posting firstTermPosting = postingFor(documentId, phraseTerms.getFirst());
         for (int startPosition : firstTermPosting.positions()) {

@@ -80,3 +80,31 @@ scoring.
 Sortedness is now an index invariant. The incremental index sorts a posting
 list after an out-of-order append; batch indexing can be added if indexing
 cost becomes a problem.
+
+## Naive autocomplete
+
+### Problem
+
+Exact-term postings cannot directly answer which indexed terms start with a
+partial prefix such as `distr`.
+
+### First implementation
+
+Autocomplete scans the existing inverted-index keys, keeps terms starting with
+the normalized prefix, sorts those matches alphabetically, and applies the
+limit. It does not maintain a second vocabulary structure.
+
+### Evidence
+
+For `suggest("distributed", 10)`, with three warmup runs and five measured
+runs:
+
+| Unique terms | Average suggestion time |
+| ---: | ---: |
+| 1K | 0.235 ms |
+| 10K | 2.934 ms |
+| 100K | 8.938 ms |
+
+At 100K unique terms, the full vocabulary scan remained under 10 ms in this
+exploratory benchmark, so a more complex prefix data structure was not yet
+justified.
