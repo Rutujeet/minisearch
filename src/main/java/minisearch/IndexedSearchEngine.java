@@ -39,12 +39,23 @@ public class IndexedSearchEngine {
             List<Posting> postings = termToPostings.computeIfAbsent(
                     termPosition.getKey(), ignored -> new ArrayList<>());
             postings.add(new Posting(document.id(), termPosition.getValue().size(), termPosition.getValue()));
-            // ponytail: sort after each append; batch or insert in order if indexing cost matters.
-            postings.sort(Comparator.comparingInt(Posting::documentId));
+            if (postings.size() > 1
+                    && postings.get(postings.size() - 2).documentId() > document.id()) {
+                // ponytail: sort after an out-of-order append; batch indexing if it becomes costly.
+                postings.sort(Comparator.comparingInt(Posting::documentId));
+            }
         }
     }
 
     public List<Document> search(String query) {
+        return search(query, Integer.MAX_VALUE);
+    }
+
+    public List<Document> search(String query, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
         Map<Integer, Double> scores = new HashMap<>();
         Set<String> queryTerms = new HashSet<>(preprocessor.tokenize(query));
 
@@ -68,8 +79,9 @@ public class IndexedSearchEngine {
                 .thenComparing(Integer::intValue));
 
         List<Document> results = new ArrayList<>();
-        for (Integer documentId : documentIds) {
-            results.add(documentsById.get(documentId));
+        int resultCount = Math.min(limit, documentIds.size());
+        for (int index = 0; index < resultCount; index++) {
+            results.add(documentsById.get(documentIds.get(index)));
         }
         return results;
     }

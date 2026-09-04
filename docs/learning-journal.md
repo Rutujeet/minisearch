@@ -77,6 +77,6 @@ scoring.
 
 ### Tradeoffs
 
-Sortedness is now an index invariant. The simple incremental index sorts a
-posting list after every append; batch indexing or ordered insertion can be
-added if indexing cost becomes a problem.
+Sortedness is now an index invariant. The incremental index sorts a posting
+list after an out-of-order append; batch indexing can be added if indexing
+cost becomes a problem.

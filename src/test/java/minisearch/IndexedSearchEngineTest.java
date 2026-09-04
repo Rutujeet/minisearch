@@ -261,6 +261,25 @@ class IndexedSearchEngineTest {
     }
 
     @Test
+    void searchLimitReturnsOnlyTheHighestRankedDocuments() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java a b c d e f g h i", "");
+        Document second = new Document(2, "java java a b c d e f g h", "");
+        Document third = new Document(3, "java java java a b c d e f g", "");
+        Document fourth = new Document(4, "java java java java a b c d e f", "");
+        Document fifth = new Document(5, "java java java java java a b c d e", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+        searchEngine.add(fifth);
+
+        assertEquals(List.of(fifth, fourth, third), searchEngine.search("java", 3));
+        assertEquals(List.of(fifth, fourth, third, second, first), searchEngine.search("java", 10));
+        assertEquals(List.of(), searchEngine.search("java", 0));
+    }
+
+    @Test
     void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document document = new Document(1, "java", "");

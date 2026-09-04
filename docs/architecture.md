@@ -60,6 +60,27 @@ token length and the total indexed token count to calculate the average.
 
 Results with the same score are ordered by lower document ID.
 
+## Limited ranked results
+
+### Problem
+
+The caller requested only the top 10 results, but search still fully sorted
+every matching document.
+
+### Evidence
+
+Full sort + take 10:
+
+| Matches | Average query time |
+| ---: | ---: |
+| 1K | 1.581 ms |
+| 10K | 10.246 ms |
+| 100K | 26.203 ms |
+
+The experiment includes scoring as well as sorting, so it does not isolate
+sorting cost. At this scale the latency is still reasonable; the concern is
+that fully ordering M results performs work the caller does not need.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each
