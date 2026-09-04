@@ -25,3 +25,8 @@ application {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+tasks.register('runExperiment', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'minisearch.NaiveSearchExperiment'
+}
