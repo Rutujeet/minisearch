@@ -34,6 +34,7 @@ flowchart LR
     G -->|Problem: term order and adjacency are unknown| H[Positional postings]
     H -->|Problem: require or exclude non-adjacent terms| I[Boolean posting operations]
     I -->|Problem: only a few ranked results are needed| J[Bounded top-K heap]
+    J -->|Problem: users type incomplete terms| K[Scan indexed vocabulary]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -47,6 +48,7 @@ flowchart LR
 | Positional postings | A term-only index cannot tell whether query terms are adjacent and ordered. | Store every token position in each posting. |
 | Boolean operations | OR matching and phrases cannot express required or excluded terms. | Merge sorted postings for intersection, union, and difference. |
 | Top-K results | Sorting every match wastes work when a caller asks for only a few results. | Keep the best K scored documents in a bounded min-heap. |
+| Autocomplete | Exact-term lookup cannot suggest terms for an incomplete prefix. | Scan the existing indexed vocabulary for matching prefixes. |
 
 ## Current ranking
 
@@ -110,6 +112,37 @@ At 100K matches the improvement is useful but not dramatic because scoring is
 still required for every match. The heap removes only the unnecessary complete
 ordering of losing results.
 
+## Autocomplete
+
+`suggest(prefix, limit)` returns known indexed terms that start with a
+case-insensitive prefix. It scans the keys of the existing inverted index,
+sorts matching terms alphabetically, and returns at most `limit` suggestions.
+There is no separate vocabulary set, frequency ranking, fuzzy matching, or
+prefix data structure.
+
+### Realistic typing workload
+
+The first 100K-term scan was under 10 ms for one suggestion. Autocomplete is
+called once per keystroke, however. This experiment measures one
+`suggest("distributed", 10)` call and a sequence of 11 ordinary calls for:
+`d`, `di`, `dis`, `dist`, `distr`, `distri`, `distrib`, `distribu`,
+`distribut`, `distribute`, and `distributed`.
+
+The vocabulary always contains ten `distributed...` terms and otherwise uses
+unique `token...` terms. Index construction happens before timing; each case
+uses three warmup runs and five measured runs.
+
+| Vocabulary | Single query | Full typing sequence |
+| ---: | ---: | ---: |
+| 100K | 3.947 ms | 43.064 ms |
+| 500K | 15.106 ms | 173.659 ms |
+| 1M | 29.818 ms | 339.551 ms |
+
+The implementation is still a full vocabulary scan, `O(V)`, for every call.
+At 1M terms the single query remains under 30 ms, but the typing sequence
+performs eleven scans and reaches about 340 ms. The experiment exposes that
+cost without choosing a replacement data structure yet.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each
@@ -141,6 +174,7 @@ answer whether a document satisfies a condition rather than how relevant it is.
   `searchPhrase` operation. Boolean queries use `searchAnd`, `searchOr`, and
   `searchAndNot`; quotation-mark parsing, parentheses, and a general query
   parser are not supported.
+- Autocomplete scans every indexed vocabulary term for each prefix request.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance
