@@ -101,11 +101,30 @@ class IndexedSearchEngineTest {
         Document first = new Document(1, "java concurrency", "");
         Document second = new Document(2, "java java java java java concurrency", "");
         Document third = new Document(3, "java", "");
+        Document fourth = new Document(4, "python", "");
         searchEngine.add(first);
         searchEngine.add(second);
         searchEngine.add(third);
+        searchEngine.add(fourth);
 
         assertEquals(List.of(second, first, third), searchEngine.search("java concurrency"));
+    }
+
+    @Test
+    void commonTermsCanOverpowerMoreInformativeTerms() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java java java java java programming language tutorial", "");
+        Document second = new Document(2, "java distributed systems", "");
+        Document third = new Document(3, "java databases", "");
+        Document fourth = new Document(4, "java networking", "");
+        Document fifth = new Document(5, "java concurrency", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+        searchEngine.add(fifth);
+
+        assertEquals(List.of(second, first, third, fourth, fifth), searchEngine.search("java distributed"));
     }
 
     @Test

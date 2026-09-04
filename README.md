@@ -15,8 +15,7 @@ It currently has two search implementations:
   It supports one or more whitespace-separated query terms.
 
 Multiple query terms use OR behavior. A document matches when it contains at
-least one query term. Results are ordered by the number of distinct query terms
-matched, then by document ID.
+least one query term. Results are ordered by TF-IDF score, then by document ID.
 
 For example, `java concurrency` returns documents containing `java`,
 `concurrency`, or both. A document containing both appears first.
@@ -66,5 +65,5 @@ and 100K documents.
 - Documents and the index exist only in memory.
 - Tokenization is deliberately basic: lowercase text and split on whitespace.
 - Punctuation is not removed, so `redis,` is different from `redis`.
-- There is no phrase search, AND search, term frequency, or relevance model.
+- There is no phrase search, AND search, or length normalization.
 - Adding the same document ID again is not supported as an update operation.

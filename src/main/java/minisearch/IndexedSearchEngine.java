@@ -28,7 +28,7 @@ public class IndexedSearchEngine {
     }
 
     public List<Document> search(String query) {
-        Map<Integer, Integer> matchCounts = new HashMap<>();
+        Map<Integer, Double> scores = new HashMap<>();
         Set<String> queryTerms = new HashSet<>(preprocessor.tokenize(query));
 
         for (String term : queryTerms) {
@@ -37,13 +37,14 @@ public class IndexedSearchEngine {
                 continue;
             }
 
+            double idf = Math.log((double) documentsById.size() / postings.size());
             for (Posting posting : postings) {
-                matchCounts.merge(posting.documentId(), posting.termFrequency(), Integer::sum);
+                scores.merge(posting.documentId(), posting.termFrequency() * idf, Double::sum);
             }
         }
 
-        List<Integer> documentIds = new ArrayList<>(matchCounts.keySet());
-        documentIds.sort(Comparator.<Integer, Integer>comparing(matchCounts::get)
+        List<Integer> documentIds = new ArrayList<>(scores.keySet());
+        documentIds.sort(Comparator.<Integer, Double>comparing(scores::get)
                 .reversed()
                 .thenComparing(Integer::intValue));
 
