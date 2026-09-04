@@ -16,38 +16,70 @@ public class AutocompleteExperiment {
                         : "token%06d".formatted(index);
                 searchEngine.add(new Document(index + 1, "shared", term));
             }
+            long start = System.nanoTime();
+            SortedVocabulary sortedVocabulary = searchEngine.sortedVocabulary();
+            long vocabularyConstructionTime = System.nanoTime() - start;
 
             for (int i = 0; i < 3; i++) {
                 searchEngine.suggest("distributed", 10);
-                suggestWhileTyping(searchEngine);
+                scanWhileTyping(searchEngine);
+                sortedVocabulary.suggest("distributed", 10);
+                sortedWhileTyping(sortedVocabulary);
+                sortedVocabulary.suggest("t", 10);
             }
 
-            long singleQueryElapsed = 0;
-            long typingSequenceElapsed = 0;
-            List<String> suggestions = List.of();
+            long scanSingleQueryElapsed = 0;
+            long scanTypingSequenceElapsed = 0;
+            long sortedSingleQueryElapsed = 0;
+            long sortedTypingSequenceElapsed = 0;
+            long sortedBroadPrefixElapsed = 0;
+            List<String> sortedSuggestions = List.of();
+            List<String> broadSuggestions = List.of();
             for (int i = 0; i < 5; i++) {
-                long start = System.nanoTime();
-                suggestions = searchEngine.suggest("distributed", 10);
-                singleQueryElapsed += System.nanoTime() - start;
+                start = System.nanoTime();
+                searchEngine.suggest("distributed", 10);
+                scanSingleQueryElapsed += System.nanoTime() - start;
 
                 start = System.nanoTime();
-                suggestWhileTyping(searchEngine);
-                typingSequenceElapsed += System.nanoTime() - start;
+                scanWhileTyping(searchEngine);
+                scanTypingSequenceElapsed += System.nanoTime() - start;
+
+                start = System.nanoTime();
+                sortedSuggestions = sortedVocabulary.suggest("distributed", 10);
+                sortedSingleQueryElapsed += System.nanoTime() - start;
+
+                start = System.nanoTime();
+                sortedWhileTyping(sortedVocabulary);
+                sortedTypingSequenceElapsed += System.nanoTime() - start;
+
+                start = System.nanoTime();
+                broadSuggestions = sortedVocabulary.suggest("t", 10);
+                sortedBroadPrefixElapsed += System.nanoTime() - start;
             }
 
-            if (suggestions.size() != 10) {
+            if (sortedSuggestions.size() != 10 || broadSuggestions.size() != 10) {
                 throw new IllegalStateException("Expected ten suggestions");
             }
-            System.out.printf("%d unique terms, single query: %.3f ms, typing sequence: %.3f ms%n",
+            System.out.printf("%d unique terms, build: %.3f ms, scan: %.3f/%.3f ms, sorted: %.3f/%.3f ms, broad t: %.3f ms%n",
                     vocabularySize,
-                    singleQueryElapsed / 5_000_000.0,
-                    typingSequenceElapsed / 5_000_000.0);
+                    vocabularyConstructionTime / 1_000_000.0,
+                    scanSingleQueryElapsed / 5_000_000.0,
+                    scanTypingSequenceElapsed / 5_000_000.0,
+                    sortedSingleQueryElapsed / 5_000_000.0,
+                    sortedTypingSequenceElapsed / 5_000_000.0,
+                    sortedBroadPrefixElapsed / 5_000_000.0);
         }
     }
 
-    private static void suggestWhileTyping(IndexedSearchEngine searchEngine) {
+    private static void scanWhileTyping(IndexedSearchEngine searchEngine) {
         for (String prefix : PREFIXES) {
             searchEngine.suggest(prefix, 10);
+        }
+    }
+
+    private static void sortedWhileTyping(SortedVocabulary vocabulary) {
+        for (String prefix : PREFIXES) {
+            vocabulary.suggest(prefix, 10);
         }
     }
 }

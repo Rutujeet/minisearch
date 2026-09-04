@@ -186,6 +186,10 @@ public class IndexedSearchEngine {
         return new ArrayList<>(suggestions.subList(0, Math.min(limit, suggestions.size())));
     }
 
+    SortedVocabulary sortedVocabulary() {
+        return new SortedVocabulary(termToPostings.keySet());
+    }
+
     private boolean containsPhrase(int documentId, List<String> phraseTerms) {
         Posting firstTermPosting = postingFor(documentId, phraseTerms.getFirst());
         for (int startPosition : firstTermPosting.positions()) {
