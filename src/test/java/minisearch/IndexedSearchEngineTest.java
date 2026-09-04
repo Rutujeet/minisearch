@@ -66,7 +66,7 @@ class IndexedSearchEngineTest {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
         Document first = new Document(1, "Java concurrency", "Threads and executors.");
         Document second = new Document(2, "Java collections", "Lists and streams.");
-        Document third = new Document(3, "Concurrency patterns", "Distributed systems.");
+        Document third = new Document(3, "Concurrency patterns", "Distributed systems today.");
         searchEngine.add(first);
         searchEngine.add(second);
         searchEngine.add(third);
@@ -96,12 +96,12 @@ class IndexedSearchEngineTest {
     }
 
     @Test
-    void ranksDocumentsHigherWhenQueryTermsOccurMoreOften() {
+    void ranksDocumentsHigherWhenQueryTermsOccurMoreOftenAtSimilarLengths() {
         IndexedSearchEngine searchEngine = new IndexedSearchEngine();
-        Document first = new Document(1, "java concurrency", "");
+        Document first = new Document(1, "java concurrency guide patterns examples details", "");
         Document second = new Document(2, "java java java java java concurrency", "");
-        Document third = new Document(3, "java", "");
-        Document fourth = new Document(4, "python", "");
+        Document third = new Document(3, "java guide patterns examples details more", "");
+        Document fourth = new Document(4, "python guide patterns examples details more", "");
         searchEngine.add(first);
         searchEngine.add(second);
         searchEngine.add(third);
@@ -125,6 +125,25 @@ class IndexedSearchEngineTest {
         searchEngine.add(fifth);
 
         assertEquals(List.of(second, first, third, fourth, fifth), searchEngine.search("java distributed"));
+    }
+
+    @Test
+    void focusedDocumentShouldBeatLongDocumentWithRepeatedTerms() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document focused = new Document(1, "Focused", "distributed systems architecture");
+        Document broad = new Document(2, "Broad", "distributed ".repeat(10)
+                + "systems systems java databases networking caching storage threads protocols "
+                + "transactions replication queues operating kernel ".repeat(15));
+        Document third = new Document(3, "Java", "databases and transactions");
+        Document fourth = new Document(4, "Networking", "protocols and sockets");
+        Document fifth = new Document(5, "Caching", "memory caching and storage");
+        searchEngine.add(focused);
+        searchEngine.add(broad);
+        searchEngine.add(third);
+        searchEngine.add(fourth);
+        searchEngine.add(fifth);
+
+        assertEquals(List.of(focused, broad), searchEngine.search("distributed systems"));
     }
 
     @Test
