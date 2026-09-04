@@ -10,15 +10,20 @@ import java.util.Set;
 
 public class IndexedSearchEngine {
     private final Map<Integer, Document> documentsById = new HashMap<>();
-    private final Map<String, List<Integer>> termToDocumentIds = new HashMap<>();
+    private final Map<String, List<Posting>> termToPostings = new HashMap<>();
     private final DocumentPreprocessor preprocessor = new DocumentPreprocessor();
 
     public void add(Document document) {
         documentsById.put(document.id(), document);
 
-        Set<String> uniqueTerms = new HashSet<>(preprocessor.prepare(document).terms());
-        for (String term : uniqueTerms) {
-            termToDocumentIds.computeIfAbsent(term, ignored -> new ArrayList<>()).add(document.id());
+        Map<String, Integer> termCounts = new HashMap<>();
+        for (String term : preprocessor.prepare(document).terms()) {
+            termCounts.merge(term, 1, Integer::sum);
+        }
+
+        for (Map.Entry<String, Integer> termCount : termCounts.entrySet()) {
+            termToPostings.computeIfAbsent(termCount.getKey(), ignored -> new ArrayList<>())
+                    .add(new Posting(document.id(), termCount.getValue()));
         }
     }
 
@@ -27,13 +32,13 @@ public class IndexedSearchEngine {
         Set<String> queryTerms = new HashSet<>(preprocessor.tokenize(query));
 
         for (String term : queryTerms) {
-            List<Integer> documentIds = termToDocumentIds.get(term);
-            if (documentIds == null) {
+            List<Posting> postings = termToPostings.get(term);
+            if (postings == null) {
                 continue;
             }
 
-            for (Integer documentId : documentIds) {
-                matchCounts.merge(documentId, 1, Integer::sum);
+            for (Posting posting : postings) {
+                matchCounts.merge(posting.documentId(), posting.termFrequency(), Integer::sum);
             }
         }
 

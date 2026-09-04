@@ -94,4 +94,26 @@ class IndexedSearchEngineTest {
 
         assertEquals(List.of(), searchEngine.search("golang kubernetes"));
     }
+
+    @Test
+    void ranksDocumentsHigherWhenQueryTermsOccurMoreOften() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document first = new Document(1, "java concurrency", "");
+        Document second = new Document(2, "java java java java java concurrency", "");
+        Document third = new Document(3, "java", "");
+        searchEngine.add(first);
+        searchEngine.add(second);
+        searchEngine.add(third);
+
+        assertEquals(List.of(second, first, third), searchEngine.search("java concurrency"));
+    }
+
+    @Test
+    void doesNotReturnTheSameDocumentTwiceForRepeatedQueryTerms() {
+        IndexedSearchEngine searchEngine = new IndexedSearchEngine();
+        Document document = new Document(1, "java", "");
+        searchEngine.add(document);
+
+        assertEquals(List.of(document), searchEngine.search("java java"));
+    }
 }
