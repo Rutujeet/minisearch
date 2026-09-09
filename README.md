@@ -20,6 +20,7 @@ deliberately basic: lowercase text and split on whitespace.
 - Explicit immutable-segment flushes through `SegmentedSearchEngine`
 - Explicit merging of persisted segments through `mergeAllSegments()`
 - Updates and deletes through tombstones: `update(document)` and `delete(id)`
+- Concurrent queries with query-start snapshot semantics
 
 Keyword queries use OR behavior. Phrase and Boolean queries are separate APIs;
 there is no query parser, quotation syntax, or parentheses.
@@ -108,6 +109,7 @@ java -cp build/classes/java/main minisearch.AutocompleteExperiment
 java -cp build/classes/java/main minisearch.PersistenceExperiment
 java -cp build/classes/java/main minisearch.SegmentFlushExperiment
 java -cp build/classes/java/main minisearch.SegmentMergeExperiment
+java -cp build/classes/java/main minisearch.ConcurrentQueryExperiment
 ```
 
 The experiments measure only the question they are intended to explore:
@@ -118,6 +120,8 @@ The experiments measure only the question they are intended to explore:
 - Persistence records single-file save time, load time, and file size.
 - Segment flush records the cost and size of writing only new indexed data.
 - Segment merge compares 1,000 small segments with one merged replacement.
+- Concurrent queries measures stable-reader throughput and query latency while
+  another thread indexes and flushes.
 
 See [docs/architecture.md](docs/architecture.md) for the measured baselines and
 the reasoning behind each step, and [docs/learning-journal.md](docs/learning-journal.md)
@@ -131,5 +135,7 @@ for the learning record.
 - Single-file persistence rewrites and reloads one complete index file.
 - Segment merging is explicit and rewrites all persisted segments into one.
 - Deletes and updates retain tombstones until a manual merge reclaims old data.
+- Writes are serialized; queries read an immutable state published at their
+  start and do not see partial flushes.
 - Segment queries use document-ID order across segments, not global BM25 ranking.
 - Adding the same document ID again is not supported as an update.

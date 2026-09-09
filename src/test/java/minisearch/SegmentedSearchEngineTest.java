@@ -10,6 +10,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -166,5 +170,55 @@ class SegmentedSearchEngineTest {
         SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
         assertEquals(List.of(), restarted.search("legacy"));
         assertEquals(List.of(replacement), restarted.search("modern"));
+    }
+
+    @Test
+    void concurrentQueriesSeeOnlyPublishedSnapshotsDuringWritesAndFlushes() throws Exception {
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        searchEngine.add(new Document(1, "Stable", "stable distributed systems java"));
+        searchEngine.add(new Document(2, "Replace", "oldcontent java"));
+        searchEngine.flush();
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(9)) {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> queryTasks = new java.util.ArrayList<>();
+            for (int thread = 0; thread < 8; thread++) {
+                queryTasks.add(executor.submit(() -> {
+                    start.await();
+                    for (int iteration = 0; iteration < 200; iteration++) {
+                        assertTrue(searchEngine.search("stable", 10).stream().allMatch(document -> document.id() == 1));
+                        assertTrue(searchEngine.searchPhrase("distributed systems").stream()
+                                .allMatch(document -> document.id() == 1));
+                        assertTrue(searchEngine.searchAnd("java", "stable").stream()
+                                .allMatch(document -> document.id() == 1));
+                        searchEngine.suggest("writer", 10);
+                    }
+                    return null;
+                }));
+            }
+
+            Future<?> writer = executor.submit(() -> {
+                start.await();
+                for (int id = 3; id < 103; id++) {
+                    searchEngine.add(new Document(id, "Writer " + id, "writer token " + id));
+                    if (id % 25 == 0) {
+                        searchEngine.flush();
+                    }
+                }
+                searchEngine.update(new Document(2, "Replace", "newcontent redis"));
+                searchEngine.flush();
+                return null;
+            });
+
+            start.countDown();
+            for (Future<?> queryTask : queryTasks) {
+                queryTask.get();
+            }
+            writer.get();
+        }
+
+        assertEquals(100, searchEngine.search("writer").size());
+        assertEquals(List.of(), searchEngine.search("oldcontent"));
+        assertEquals(List.of(2), searchEngine.search("newcontent").stream().map(Document::id).toList());
     }
 }

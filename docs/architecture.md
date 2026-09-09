@@ -40,6 +40,7 @@ flowchart LR
     M -->|Problem: many small segments add read work| N[Manual segment merge]
     N -->|Problem: rebuild repeats indexing work| O[Structural segment merge]
     O -->|Problem: immutable files cannot be edited| P[Tombstones]
+    P -->|Problem: readers race with mutable writes| Q[Published query snapshots]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -59,6 +60,7 @@ flowchart LR
 | Manual segment merge | Many small immutable segments add fixed work to reads. | Rebuild all persisted documents into one replacement segment. |
 | Structural segment merge | Re-indexing documents during merge repeats work already stored in postings. | Merge document metadata and sorted posting lists directly. |
 | Tombstones | Immutable segment files cannot remove or replace an old document. | Hide obsolete IDs until a manual merge removes them. |
+| Concurrent reads | Queries can race with indexing and segment publication. | Publish immutable query snapshots atomically. |
 
 ## Current ranking
 
@@ -273,6 +275,32 @@ replacement segment therefore contains no dead postings, and the tombstone
 file is cleared after a successful merge. There are no document versions,
 MVCC, or delete-only segments.
 
+## Concurrent reads and writes
+
+`SegmentedSearchEngine` publishes one immutable state containing the current
+segment list, tombstones, and a frozen mutable-index view. A query reads that
+state once, then searches it without locks. It sees either the state published
+before a flush or the state published after it; it never sees a partial segment.
+
+Writers use one coarse lock. Before changing the mutable index, they copy its
+indexed state and publish the replacement only when complete. Published
+segments are never modified. Indexing, delete, update, flush, and merge may
+wait for each other, but they do not block an in-progress query.
+
+The fixed-work concurrency experiment uses a stable 10K-document segment and
+100 `java` queries per reader thread.
+
+| Query threads | Throughput |
+| ---: | ---: |
+| 1 | 119.6 queries/s |
+| 4 | 398.1 queries/s |
+| 8 | 490.6 queries/s |
+
+In the same exploratory run, stable query latency averaged 7.278 ms (19.099
+ms max). While another thread indexed 100 documents and flushed them, it
+averaged 7.929 ms (12.785 ms max). These are not latency guarantees; they only
+show that this implementation did not show a major spike in that run.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each
@@ -308,6 +336,8 @@ answer whether a document satisfies a condition rather than how relevant it is.
 - `IndexStorage` rewrites and reloads one complete snapshot file. Segment
   flushes write only new data; manual segment merge rewrites persisted data.
 - Updates and deletes use tombstones until a manual merge reclaims old data.
+- Queries use query-start snapshot semantics. Writes are serialized under one
+  coarse lock and copy the mutable in-memory index before publishing it.
 - Cross-segment ranked search uses document-ID order until global BM25
   collection statistics are introduced.
 - Re-indexing an existing document ID is not supported as an update.

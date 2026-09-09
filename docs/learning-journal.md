@@ -348,3 +348,40 @@ the tombstone state is cleared.
 Queries inspect tombstones in addition to segments, and deleted data occupies
 space until a manual merge. There are no document versions, MVCC, or automatic
 merge policy.
+
+## Concurrent queries during indexing
+
+### Problem
+
+The mutable index, segment list, and tombstones could be changed while a query
+was reading them. A flush also needed to publish a completed segment without
+exposing a partially written file.
+
+### New design
+
+The engine atomically publishes an immutable query state: segment list,
+tombstones, and frozen mutable-index view. A query keeps the state it reads at
+its start. Writers use one coarse lock and make a structural mutable-index copy
+before changing it, so no published index is later mutated.
+
+### Evidence
+
+An eight-reader, one-writer fixed-iteration test adds documents, flushes
+periodically, and updates a document while readers run normal, phrase,
+Boolean, and autocomplete queries. It completes without exceptions or partial
+results. On a stable 10K-document segment, the exploratory throughput run was:
+
+| Readers | Throughput |
+| ---: | ---: |
+| 1 | 119.6 queries/s |
+| 4 | 398.1 queries/s |
+| 8 | 490.6 queries/s |
+
+Average query latency was 7.278 ms while stable and 7.929 ms while a writer
+indexed 100 documents and flushed them in the same run.
+
+### Tradeoffs
+
+Writes are serialized, and every mutable write copies the current mutable
+index. That is deliberately simple and can become expensive for large mutable
+batches. There are no indexing workers, queues, sharding, or lock-free writes.
