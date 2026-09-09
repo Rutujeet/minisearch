@@ -1,7 +1,5 @@
 # MiniSearch
 
-**A full-text search engine built from first principles in Java 21.**
-
 MiniSearch implements the core mechanics behind text search without Lucene, Elasticsearch, OpenSearch, or a prebuilt indexing library: positional inverted indexes, BM25 ranking, phrase and Boolean queries, top-K retrieval, persistence, immutable index segments, tombstone-based updates/deletes, and concurrent query snapshots.
 
 **100K PubMed citations · 1.33K docs/s indexing · 2.68 ms p95 ranked search · 446.7 queries/s with 4 readers**
