@@ -190,6 +190,14 @@ public class IndexedSearchEngine {
         return new SortedVocabulary(termToPostings.keySet());
     }
 
+    int documentCount() {
+        return documentsById.size();
+    }
+
+    Set<String> vocabulary() {
+        return Set.copyOf(termToPostings.keySet());
+    }
+
     IndexSnapshot snapshot() {
         List<StoredDocument> documents = new ArrayList<>();
         for (Map.Entry<Integer, Document> entry : documentsById.entrySet()) {

@@ -36,6 +36,7 @@ flowchart LR
     I -->|Problem: only a few ranked results are needed| J[Bounded top-K heap]
     J -->|Problem: users type incomplete terms| K[Scan indexed vocabulary]
     K -->|Problem: restart loses the index| L[Single-file persistence]
+    L -->|Problem: small updates rewrite the full snapshot| M[Immutable segments]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -51,6 +52,7 @@ flowchart LR
 | Top-K results | Sorting every match wastes work when a caller asks for only a few results. | Keep the best K scored documents in a bounded min-heap. |
 | Autocomplete | Exact-term lookup cannot suggest terms for an incomplete prefix. | Scan the existing indexed vocabulary for matching prefixes. |
 | Persistence | Process restarts lose all indexed state. | Save and load one complete versioned binary index file. |
+| Immutable segments | Small updates rewrite the full persisted snapshot. | Flush new documents to a separate immutable index file. |
 
 ## Current ranking
 
@@ -163,9 +165,32 @@ are not stored because they can be rebuilt from persisted source state.
 | 100K | 2672.157 ms | 1592.068 ms | 25.428 MB |
 
 The experiment builds the deterministic corpus before timing. Save and load
-measure only the single-file operation. This design has no WAL, segments,
+measure only the single-file operation. The snapshot format has no WAL,
 background flush, merge, compression, or recovery. Saving a changed index
 rewrites the whole file, and loading restores the whole file into memory.
+
+## Immutable segments
+
+`SegmentedSearchEngine` keeps a mutable in-memory index and a directory of
+immutable segment files. Calling `flush()` saves the mutable index as the next
+`segment-000001.bin`-style file, adds it to searchable segments, and starts a
+fresh mutable index. Existing segment files are never modified.
+
+Search, phrase, Boolean, and autocomplete queries run against every immutable
+segment and the current mutable index. Their results are combined by document
+ID. This is deliberately not global BM25 ranking: each segment currently has
+only local collection statistics, so scores cannot yet be compared correctly
+across segments.
+
+| New documents flushed after a 100K-document segment | Flush time | New segment size |
+| ---: | ---: | ---: |
+| 1 | 0.922 ms | 0.000 MB |
+| 100 | 3.882 ms | 0.026 MB |
+| 1K | 35.096 ms | 0.257 MB |
+
+The earlier full snapshot re-saves took seconds and rewrote about 25 MB for
+the same update sizes. Segment flush writes only the new index data. There is
+no automatic flush threshold, manifest, deletion, merge, or compaction yet.
 
 ## Phrase search
 
@@ -200,6 +225,8 @@ answer whether a document satisfies a condition rather than how relevant it is.
   parser are not supported.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
 - Persistence rewrites and reloads one complete index file.
+- Cross-segment ranked search uses document-ID order until global BM25
+  collection statistics are introduced.
 - Re-indexing an existing document ID is not supported as an update.
 
 ## Inverted-index performance

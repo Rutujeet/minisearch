@@ -138,3 +138,59 @@ The single file is easy to understand and supports exact round trips, but any
 save rewrites the entire index and any load reconstructs the complete in-memory
 structure. More incremental storage is not justified until that becomes a
 measured problem.
+
+## Snapshot update cost
+
+### Problem
+
+Single-file persistence survives restarts, but it is unclear whether saving a
+small update costs proportional to the update or to the whole loaded index.
+
+### Evidence
+
+Each measurement built and saved 100K documents, indexed the added documents
+before timing, then measured one more `save()`.
+
+| Existing documents | Added documents | Re-save | Final file size |
+| ---: | ---: | ---: | ---: |
+| 100K | 1 | 3234.089 ms | 25.428 MB |
+| 100K | 100 | 2832.599 ms | 25.454 MB |
+| 100K | 1K | 2673.055 ms | 25.684 MB |
+
+### Conclusion
+
+The tiny updates changed file size only slightly, but each save still took
+whole-index time because the snapshot serializer rewrote the complete file.
+Persistence cost currently depends primarily on total index size, not on the
+amount of newly indexed data.
+
+## Immutable segment flushes
+
+### Problem
+
+Small updates to a large snapshot still rewrote the complete persisted index.
+
+### New design
+
+`SegmentedSearchEngine` writes the current mutable index to a new immutable
+segment file when `flush()` is called. It then searches that segment, earlier
+segments, and the new mutable index together. Older segment files are not
+modified.
+
+### Evidence
+
+After flushing one 100K-document segment, later flushes wrote only the new
+documents:
+
+| Added documents | Flush | New segment size |
+| ---: | ---: | ---: |
+| 1 | 0.922 ms | 0.000 MB |
+| 100 | 3.882 ms | 0.026 MB |
+| 1K | 35.096 ms | 0.257 MB |
+
+### Tradeoffs
+
+Write cost now follows new data rather than total historical data. Queries must
+visit every segment, and BM25 scores are currently ordered by document ID
+across segments because collection-wide statistics have not been aggregated.
+Merge and compaction are intentionally not implemented.
