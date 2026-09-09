@@ -194,3 +194,30 @@ Write cost now follows new data rather than total historical data. Queries must
 visit every segment, and BM25 scores are currently ordered by document ID
 across segments because collection-wide statistics have not been aggregated.
 Merge and compaction are intentionally not implemented.
+
+## Segment-count read cost
+
+### Problem
+
+Immutable segments reduce write amplification, but each segment is another
+independent index that queries and restart logic must inspect.
+
+### Evidence
+
+The corpus remained fixed at 100K documents. The rare term appears in one
+document; the common term appears in every document. Each query used three
+warmup runs and five measured runs.
+
+| Segments | Docs/segment | Rare query | Common query | Load time |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 100K | 0.176 ms | 130.725 ms | 4579.424 ms |
+| 10 | 10K | 0.167 ms | 49.180 ms | 3682.346 ms |
+| 100 | 1K | 0.153 ms | 37.834 ms | 3293.492 ms |
+| 1K | 100 | 3.005 ms | 70.268 ms | 3511.573 ms |
+
+### Tradeoffs
+
+At 1,000 segments, even the rare query must visit many independent indexes and
+is noticeably slower than the smaller-segment-count cases. This is read
+amplification: immutable segments fix whole-snapshot rewrites but add read and
+startup work as segment count grows. No merge policy has been chosen yet.
