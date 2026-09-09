@@ -319,3 +319,32 @@ persisted index representation. It still loads source index state into memory,
 iteratively merges postings, and writes a complete replacement segment. No
 streaming merge, k-way posting merge, automatic policy, or background work has
 been added.
+
+## Updates and deletes with tombstones
+
+### Problem
+
+An immutable segment cannot remove or replace a document after it has been
+written. Editing the old file would break the immutable-segment model.
+
+### New design
+
+`delete(id)` records a tombstone and hides that ID in existing segments.
+`update(document)` deletes the old ID and adds its replacement to the mutable
+index. Tombstones survive restart in a small versioned file. They carry the
+latest segment number they affect, so a newly flushed replacement with the
+same ID stays visible.
+
+### Evidence
+
+Tests verify that deleted documents disappear from normal, phrase, and Boolean
+queries; autocomplete removes a term only when its last document is deleted;
+updates replace old searchable content; and tombstones survive restart.
+Merging a deleted document out of a segment removes its postings, after which
+the tombstone state is cleared.
+
+### Tradeoffs
+
+Queries inspect tombstones in addition to segments, and deleted data occupies
+space until a manual merge. There are no document versions, MVCC, or automatic
+merge policy.

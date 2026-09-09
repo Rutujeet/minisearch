@@ -109,4 +109,62 @@ class SegmentedSearchEngineTest {
         assertEquals(control.searchAnd("java", "concurrency"), searchEngine.searchAnd("java", "concurrency"));
         assertEquals(control.suggest("distr", 10), searchEngine.suggest("distr", 10));
     }
+
+    @Test
+    void deleteHidesPersistedDocumentsFromAllQueryTypesAndSurvivesRestart() throws IOException {
+        Document deleted = new Document(1, "Deleted", "legacy phrase java spring obsoleteword");
+        Document retained = new Document(2, "Retained", "active phrase java concurrency");
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        searchEngine.add(deleted);
+        searchEngine.flush();
+        searchEngine.add(retained);
+        searchEngine.flush();
+
+        searchEngine.delete(deleted.id());
+
+        assertEquals(List.of(), searchEngine.search("legacy"));
+        assertEquals(List.of(), searchEngine.searchPhrase("legacy phrase"));
+        assertEquals(List.of(), searchEngine.searchAnd("java", "spring"));
+        assertEquals(List.of(retained), searchEngine.searchAndNot("java", "spring"));
+        assertEquals(List.of(), searchEngine.suggest("obsolete", 10));
+        assertEquals(List.of("java"), searchEngine.suggest("ja", 10));
+
+        SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
+        assertEquals(List.of(), restarted.search("legacy"));
+        assertEquals(List.of(retained), restarted.search("active"));
+    }
+
+    @Test
+    void updateHidesOldContentAndMakesNewContentSearchable() throws IOException {
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        searchEngine.add(new Document(42, "Old", "legacy java"));
+        searchEngine.flush();
+
+        Document updated = new Document(42, "New", "modern redis");
+        searchEngine.update(updated);
+
+        assertEquals(List.of(), searchEngine.search("legacy"));
+        assertEquals(List.of(updated), searchEngine.search("modern"));
+        searchEngine.flush();
+        SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
+        assertEquals(List.of(), restarted.search("legacy"));
+        assertEquals(List.of(updated), restarted.search("modern"));
+    }
+
+    @Test
+    void mergePhysicallyRemovesDeletedDocumentAndClearsItsTombstone() throws IOException {
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        searchEngine.add(new Document(7, "Old", "legacy content"));
+        searchEngine.flush();
+        searchEngine.delete(7);
+
+        searchEngine.mergeAllSegments();
+        Document replacement = new Document(7, "New", "modern content");
+        searchEngine.add(replacement);
+        searchEngine.flush();
+
+        SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
+        assertEquals(List.of(), restarted.search("legacy"));
+        assertEquals(List.of(replacement), restarted.search("modern"));
+    }
 }

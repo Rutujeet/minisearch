@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -16,7 +18,9 @@ public class SegmentedSearchEngine {
     private final Path segmentsDirectory;
     private final SegmentStorage segmentStorage = new SegmentStorage();
     private final IndexSnapshotMerger snapshotMerger = new IndexSnapshotMerger();
+    private final TombstoneStorage tombstoneStorage = new TombstoneStorage();
     private final List<Segment> segments = new ArrayList<>();
+    private final Map<Integer, Integer> deletedThroughSegment;
     private final DocumentPreprocessor preprocessor = new DocumentPreprocessor();
     private IndexedSearchEngine mutableIndex = new IndexedSearchEngine();
     private int nextSegmentNumber = 1;
@@ -25,6 +29,7 @@ public class SegmentedSearchEngine {
     public SegmentedSearchEngine(Path segmentsDirectory) throws IOException {
         this.segmentsDirectory = segmentsDirectory;
         Files.createDirectories(segmentsDirectory);
+        deletedThroughSegment = tombstoneStorage.load(tombstonePath());
         try (Stream<Path> paths = Files.list(segmentsDirectory)) {
             for (Path path : paths
                     .filter(path -> path.getFileName().toString().matches("segment-\\d+\\.bin"))
@@ -41,6 +46,19 @@ public class SegmentedSearchEngine {
         mutableIndex.add(document);
     }
 
+    /** Hides a document from persisted segments and removes a mutable copy. */
+    public void delete(int documentId) throws IOException {
+        deletedThroughSegment.merge(documentId, latestSegmentNumber(), Math::max);
+        mutableIndex.remove(documentId);
+        tombstoneStorage.save(deletedThroughSegment, tombstonePath());
+    }
+
+    /** Replaces a document by tombstoning its old persisted copy and indexing a new mutable copy. */
+    public void update(Document document) throws IOException {
+        delete(document.id());
+        mutableIndex.add(document);
+    }
+
     /** Persists the current mutable index as a new immutable segment. */
     public void flush() throws IOException {
         if (mutableIndex.documentCount() == 0) {
@@ -54,14 +72,15 @@ public class SegmentedSearchEngine {
 
     /** Rebuilds all immutable segments into one new immutable segment. */
     public MergeTimings mergeAllSegments() throws IOException {
-        if (segments.size() < 2) {
+        if (segments.isEmpty() || (segments.size() < 2 && deletedThroughSegment.isEmpty())) {
             return MergeTimings.empty();
         }
 
         long start = System.nanoTime();
         List<IndexSnapshot> snapshots = new ArrayList<>();
         for (Segment segment : segments) {
-            snapshots.add(segment.index().snapshot());
+            snapshots.add(snapshotMerger.withoutDocuments(
+                    segment.index().snapshot(), deletedIn(segment)));
         }
         IndexedSearchEngine mergedIndex = IndexedSearchEngine.fromSnapshot(snapshotMerger.merge(snapshots));
         long structuralMergeNanos = System.nanoTime() - start;
@@ -77,6 +96,8 @@ public class SegmentedSearchEngine {
         for (Segment oldSegment : oldSegments) {
             Files.delete(oldSegment.path());
         }
+        deletedThroughSegment.clear();
+        tombstoneStorage.save(deletedThroughSegment, tombstonePath());
         long cleanupNanos = System.nanoTime() - start;
         return new MergeTimings(structuralMergeNanos, writeNanos, cleanupNanos);
     }
@@ -124,7 +145,7 @@ public class SegmentedSearchEngine {
 
         List<String> suggestions = new ArrayList<>();
         for (String term : vocabulary) {
-            if (term.startsWith(normalizedPrefix)) {
+            if (term.startsWith(normalizedPrefix) && containsLiveTerm(term)) {
                 suggestions.add(term);
                 if (suggestions.size() == limit) {
                     break;
@@ -144,12 +165,49 @@ public class SegmentedSearchEngine {
 
     private List<Document> acrossIndexes(Function<IndexedSearchEngine, List<Document>> search) {
         TreeMap<Integer, Document> documents = new TreeMap<>();
-        for (IndexedSearchEngine index : indexes()) {
-            for (Document document : search.apply(index)) {
-                documents.put(document.id(), document);
+        for (Segment segment : segments) {
+            for (Document document : search.apply(segment.index())) {
+                if (!isDeletedIn(segment, document.id())) {
+                    documents.put(document.id(), document);
+                }
             }
         }
+        for (Document document : search.apply(mutableIndex)) {
+            documents.put(document.id(), document);
+        }
         return new ArrayList<>(documents.values());
+    }
+
+    private boolean containsLiveTerm(String term) {
+        for (Segment segment : segments) {
+            List<Posting> postings = segment.index().snapshot().postings().get(term);
+            if (postings != null && postings.stream().anyMatch(posting -> !isDeletedIn(segment, posting.documentId()))) {
+                return true;
+            }
+        }
+        return mutableIndex.snapshot().postings().containsKey(term);
+    }
+
+    private Set<Integer> deletedIn(Segment segment) {
+        Set<Integer> documentIds = new TreeSet<>();
+        for (Map.Entry<Integer, Integer> tombstone : deletedThroughSegment.entrySet()) {
+            if (tombstone.getValue() >= segmentNumber(segment.path())) {
+                documentIds.add(tombstone.getKey());
+            }
+        }
+        return documentIds;
+    }
+
+    private boolean isDeletedIn(Segment segment, int documentId) {
+        return deletedThroughSegment.getOrDefault(documentId, -1) >= segmentNumber(segment.path());
+    }
+
+    private int latestSegmentNumber() {
+        return nextSegmentNumber - 1;
+    }
+
+    private Path tombstonePath() {
+        return segmentsDirectory.resolve("tombstones.bin");
     }
 
     private List<IndexedSearchEngine> indexes() {

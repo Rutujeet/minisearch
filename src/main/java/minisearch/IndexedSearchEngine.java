@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 import java.util.Set;
 
@@ -48,6 +49,23 @@ public class IndexedSearchEngine {
                     && postings.get(postings.size() - 2).documentId() > document.id()) {
                 // ponytail: sort after an out-of-order append; batch indexing if it becomes costly.
                 postings.sort(Comparator.comparingInt(Posting::documentId));
+            }
+        }
+    }
+
+    void remove(int documentId) {
+        Document removed = documentsById.remove(documentId);
+        if (removed == null) {
+            return;
+        }
+
+        totalDocumentLength -= documentLengths.remove(documentId);
+        Iterator<Map.Entry<String, List<Posting>>> terms = termToPostings.entrySet().iterator();
+        while (terms.hasNext()) {
+            Map.Entry<String, List<Posting>> term = terms.next();
+            term.getValue().removeIf(posting -> posting.documentId() == documentId);
+            if (term.getValue().isEmpty()) {
+                terms.remove();
             }
         }
     }

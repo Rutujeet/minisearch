@@ -19,6 +19,7 @@ deliberately basic: lowercase text and split on whitespace.
 - Single-file save and load through `IndexStorage`
 - Explicit immutable-segment flushes through `SegmentedSearchEngine`
 - Explicit merging of persisted segments through `mergeAllSegments()`
+- Updates and deletes through tombstones: `update(document)` and `delete(id)`
 
 Keyword queries use OR behavior. Phrase and Boolean queries are separate APIs;
 there is no query parser, quotation syntax, or parentheses.
@@ -52,6 +53,8 @@ and writes it to a new immutable file when `flush()` is called:
 SegmentedSearchEngine segments = new SegmentedSearchEngine(Path.of("segments"));
 segments.add(document);
 segments.flush();
+segments.update(new Document(1, "New title", "new body"));
+segments.delete(2);
 segments.mergeAllSegments(); // Explicitly merge persisted segments into one.
 ```
 
@@ -59,6 +62,8 @@ Existing segment files are never modified. Segment queries combine all flushed
 segments and mutable documents by document ID. Cross-segment BM25 ranking is
 not implemented yet because each segment currently has local statistics.
 Merging is manual; there is no automatic threshold or background merge policy.
+Deleted segment documents are hidden by persisted tombstones until a manual
+merge removes their old postings.
 
 ## Requirements
 
@@ -125,5 +130,6 @@ for the learning record.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
 - Single-file persistence rewrites and reloads one complete index file.
 - Segment merging is explicit and rewrites all persisted segments into one.
+- Deletes and updates retain tombstones until a manual merge reclaims old data.
 - Segment queries use document-ID order across segments, not global BM25 ranking.
 - Adding the same document ID again is not supported as an update.

@@ -39,6 +39,7 @@ flowchart LR
     L -->|Problem: small updates rewrite the full snapshot| M[Immutable segments]
     M -->|Problem: many small segments add read work| N[Manual segment merge]
     N -->|Problem: rebuild repeats indexing work| O[Structural segment merge]
+    O -->|Problem: immutable files cannot be edited| P[Tombstones]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -57,6 +58,7 @@ flowchart LR
 | Immutable segments | Small updates rewrite the full persisted snapshot. | Flush new documents to a separate immutable index file. |
 | Manual segment merge | Many small immutable segments add fixed work to reads. | Rebuild all persisted documents into one replacement segment. |
 | Structural segment merge | Re-indexing documents during merge repeats work already stored in postings. | Merge document metadata and sorted posting lists directly. |
+| Tombstones | Immutable segment files cannot remove or replace an old document. | Hide obsolete IDs until a manual merge removes them. |
 
 ## Current ranking
 
@@ -254,6 +256,23 @@ This removes the 78–125 second re-indexing phase. The remaining merge cost is
 now structural copying and writing the replacement segment. The merge still
 loads all source state into memory and merges posting lists iteratively.
 
+## Updates and deletes
+
+Persisted segment files remain immutable. `delete(documentId)` writes a small
+versioned tombstone file. A tombstone hides that ID only in segments that
+already existed when it was created. `update(document)` is delete plus adding
+the replacement to the mutable index, so the new document is visible while
+the old segment copy stays hidden.
+
+Tombstones are loaded at startup. Normal, phrase, Boolean, and autocomplete
+queries ignore deleted segment postings. If a deleted document was the last
+document containing a term, that term is no longer suggested.
+
+Manual merge filters tombstoned documents before combining snapshots. The
+replacement segment therefore contains no dead postings, and the tombstone
+file is cleared after a successful merge. There are no document versions,
+MVCC, or delete-only segments.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each
@@ -288,6 +307,7 @@ answer whether a document satisfies a condition rather than how relevant it is.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
 - `IndexStorage` rewrites and reloads one complete snapshot file. Segment
   flushes write only new data; manual segment merge rewrites persisted data.
+- Updates and deletes use tombstones until a manual merge reclaims old data.
 - Cross-segment ranked search uses document-ID order until global BM25
   collection statistics are introduced.
 - Re-indexing an existing document ID is not supported as an update.
