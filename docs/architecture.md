@@ -38,6 +38,7 @@ flowchart LR
     K -->|Problem: restart loses the index| L[Single-file persistence]
     L -->|Problem: small updates rewrite the full snapshot| M[Immutable segments]
     M -->|Problem: many small segments add read work| N[Manual segment merge]
+    N -->|Problem: rebuild repeats indexing work| O[Structural segment merge]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -55,6 +56,7 @@ flowchart LR
 | Persistence | Process restarts lose all indexed state. | Save and load one complete versioned binary index file. |
 | Immutable segments | Small updates rewrite the full persisted snapshot. | Flush new documents to a separate immutable index file. |
 | Manual segment merge | Many small immutable segments add fixed work to reads. | Rebuild all persisted documents into one replacement segment. |
+| Structural segment merge | Re-indexing documents during merge repeats work already stored in postings. | Merge document metadata and sorted posting lists directly. |
 
 ## Current ranking
 
@@ -200,11 +202,11 @@ Many small segments make a query inspect many independent indexes. At 1,000
 segments, a rare-term query spent visible time on per-segment lookup even
 though almost every segment had no match.
 
-`mergeAllSegments()` is an explicit operation. It rebuilds a new in-memory
-index from the documents in all persisted segments, writes one new segment,
-registers it, then removes the old files. The new file is written before any
-old file is removed, so a failed write does not discard the existing segments.
-The mutable index is not part of this operation.
+`mergeAllSegments()` is an explicit operation. It combines the indexed state
+from all persisted segments, writes one new segment, registers it, then
+removes the old files. The new file is written before any old file is removed,
+so a failed write does not discard the existing segments. The mutable index is
+not part of this operation.
 
 The same 100K-document corpus was measured before and after merging 1,000
 100-document segments. Each query used three warmup runs and five measured
@@ -235,6 +237,22 @@ it is shown separately from the merge operation.
 These are exploratory runs, so their absolute times vary. The stable signal is
 that rebuilding the already-indexed documents dominates both layouts. Reading
 documents and handling source files are much smaller costs.
+
+### Structural merge
+
+The current merge no longer sends documents through the tokenizer or normal
+indexing path. It combines document metadata and total document length, then
+merges sorted posting lists term by term. A duplicate document ID fails
+clearly. Vocabulary remains derived from the merged posting keys.
+
+| Source layout | Load source segments | Structural merge | Write | Cleanup | Merge total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1K × 100 docs | 2587.154 ms | 2360.772 ms | 2964.057 ms | 12.765 ms | 5337.594 ms |
+| 100 × 1K docs | 2968.520 ms | 294.436 ms | 2884.467 ms | 4.303 ms | 3183.206 ms |
+
+This removes the 78–125 second re-indexing phase. The remaining merge cost is
+now structural copying and writing the replacement segment. The merge still
+loads all source state into memory and merges posting lists iteratively.
 
 ## Phrase search
 

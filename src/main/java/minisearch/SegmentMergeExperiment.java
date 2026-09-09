@@ -40,8 +40,7 @@ public class SegmentMergeExperiment {
             }
             System.out.printf("%d segments x %d docs (%d total)%n", segmentCount, documentsPerSegment, TOTAL_DOCUMENTS);
             System.out.printf("load source segments: %.3f ms%n", loadBefore);
-            System.out.printf("read source documents: %.3f ms%n", nanosToMillis(mergeTimings.sourceReadNanos()));
-            System.out.printf("re-index documents: %.3f ms%n", nanosToMillis(mergeTimings.reindexNanos()));
+            System.out.printf("structural merge: %.3f ms%n", nanosToMillis(mergeTimings.structuralMergeNanos()));
             System.out.printf("write merged segment: %.3f ms%n", nanosToMillis(mergeTimings.writeNanos()));
             System.out.printf("cleanup old segments: %.3f ms%n", nanosToMillis(mergeTimings.cleanupNanos()));
             System.out.printf("merge total: %.3f ms, merged file size %.3f MB, after: %d segment%n",

@@ -88,4 +88,25 @@ class SegmentedSearchEngineTest {
         SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
         assertEquals(List.of(first, second, third), restarted.search("java"));
     }
+
+    @Test
+    void structuralMergeMatchesAnIndexBuiltFromTheSameDocuments() throws IOException {
+        Document first = new Document(1, "Java Java", "distributed systems java concurrency");
+        Document second = new Document(10, "Redis", "distributed systems java spring");
+        IndexedSearchEngine control = new IndexedSearchEngine();
+        control.add(first);
+        control.add(second);
+
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        searchEngine.add(first);
+        searchEngine.flush();
+        searchEngine.add(second);
+        searchEngine.flush();
+        searchEngine.mergeAllSegments();
+
+        assertEquals(control.search("java"), searchEngine.search("java"));
+        assertEquals(control.searchPhrase("distributed systems"), searchEngine.searchPhrase("distributed systems"));
+        assertEquals(control.searchAnd("java", "concurrency"), searchEngine.searchAnd("java", "concurrency"));
+        assertEquals(control.suggest("distr", 10), searchEngine.suggest("distr", 10));
+    }
 }

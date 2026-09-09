@@ -15,6 +15,7 @@ import java.util.stream.Stream;
 public class SegmentedSearchEngine {
     private final Path segmentsDirectory;
     private final SegmentStorage segmentStorage = new SegmentStorage();
+    private final IndexSnapshotMerger snapshotMerger = new IndexSnapshotMerger();
     private final List<Segment> segments = new ArrayList<>();
     private final DocumentPreprocessor preprocessor = new DocumentPreprocessor();
     private IndexedSearchEngine mutableIndex = new IndexedSearchEngine();
@@ -58,21 +59,12 @@ public class SegmentedSearchEngine {
         }
 
         long start = System.nanoTime();
-        List<Document> documents = new ArrayList<>();
+        List<IndexSnapshot> snapshots = new ArrayList<>();
         for (Segment segment : segments) {
-            for (StoredDocument document : segment.index().snapshot().documents()) {
-                documents.add(document.document());
-            }
+            snapshots.add(segment.index().snapshot());
         }
-        long sourceReadNanos = System.nanoTime() - start;
-
-        // ponytail: rebuild documents instead of merging postings; use a posting-level merge only if merge time becomes a problem.
-        start = System.nanoTime();
-        IndexedSearchEngine mergedIndex = new IndexedSearchEngine();
-        for (Document document : documents) {
-            mergedIndex.add(document);
-        }
-        long reindexNanos = System.nanoTime() - start;
+        IndexedSearchEngine mergedIndex = IndexedSearchEngine.fromSnapshot(snapshotMerger.merge(snapshots));
+        long structuralMergeNanos = System.nanoTime() - start;
 
         start = System.nanoTime();
         Segment mergedSegment = segmentStorage.write(mergedIndex, nextSegmentPath());
@@ -86,7 +78,7 @@ public class SegmentedSearchEngine {
             Files.delete(oldSegment.path());
         }
         long cleanupNanos = System.nanoTime() - start;
-        return new MergeTimings(sourceReadNanos, reindexNanos, writeNanos, cleanupNanos);
+        return new MergeTimings(structuralMergeNanos, writeNanos, cleanupNanos);
     }
 
     public List<Document> search(String query) {
@@ -179,13 +171,13 @@ public class SegmentedSearchEngine {
     }
 
     /** Timings for the coarse phases of one manual merge. */
-    public record MergeTimings(long sourceReadNanos, long reindexNanos, long writeNanos, long cleanupNanos) {
+    public record MergeTimings(long structuralMergeNanos, long writeNanos, long cleanupNanos) {
         static MergeTimings empty() {
-            return new MergeTimings(0, 0, 0, 0);
+            return new MergeTimings(0, 0, 0);
         }
 
         public long totalNanos() {
-            return sourceReadNanos + reindexNanos + writeNanos + cleanupNanos;
+            return structuralMergeNanos + writeNanos + cleanupNanos;
         }
     }
 }

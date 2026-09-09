@@ -251,8 +251,7 @@ a 13.578 MB replacement segment.
 
 Manual merging reduces read amplification, but it reads and rewrites old data,
 creating write amplification again. There is no automatic merge policy,
-background scheduler, posting-level merge, or global cross-segment BM25
-statistics yet.
+background scheduler, or global cross-segment BM25 statistics yet.
 
 ## Manual merge phase profile
 
@@ -285,3 +284,38 @@ Before adding a merge policy or moving work to a background thread, the next
 question is whether MiniSearch can merge indexed state directly in memory.
 That would remove redundant re-indexing while keeping the same read-all and
 write-one-segment behavior.
+
+## Structural segment merge
+
+### Problem
+
+The phase profile showed that manual merging spent 78–125 seconds re-indexing
+documents that already had tokens, term frequencies, positions, document
+lengths, and postings stored in their source segments.
+
+### New design
+
+Merge consumes `IndexSnapshot` data directly. It combines documents and their
+stored lengths, sums total document length, and merges each term's sorted
+posting lists with forward pointers. Duplicate document IDs fail clearly.
+The tokenizer is not part of the merge path.
+
+### Evidence
+
+| Source layout | Structural merge | Write | Cleanup | Merge total |
+| --- | ---: | ---: | ---: | ---: |
+| 1K × 100 docs | 2360.772 ms | 2964.057 ms | 12.765 ms | 5337.594 ms |
+| 100 × 1K docs | 294.436 ms | 2884.467 ms | 4.303 ms | 3183.206 ms |
+
+This replaces the earlier 130.186-second and 81.576-second rebuild totals in
+the phase-profile runs. A control index built normally from the same documents
+matches the merged segment for BM25 search, phrase search, Boolean search, and
+autocomplete.
+
+### Tradeoffs
+
+Merge logic now understands the snapshot structure, which couples it to the
+persisted index representation. It still loads source index state into memory,
+iteratively merges postings, and writes a complete replacement segment. No
+streaming merge, k-way posting merge, automatic policy, or background work has
+been added.
