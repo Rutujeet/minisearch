@@ -37,6 +37,7 @@ flowchart LR
     J -->|Problem: users type incomplete terms| K[Scan indexed vocabulary]
     K -->|Problem: restart loses the index| L[Single-file persistence]
     L -->|Problem: small updates rewrite the full snapshot| M[Immutable segments]
+    M -->|Problem: many small segments add read work| N[Manual segment merge]
 ```
 
 | Stage | Problem | Smallest useful approach |
@@ -53,6 +54,7 @@ flowchart LR
 | Autocomplete | Exact-term lookup cannot suggest terms for an incomplete prefix. | Scan the existing indexed vocabulary for matching prefixes. |
 | Persistence | Process restarts lose all indexed state. | Save and load one complete versioned binary index file. |
 | Immutable segments | Small updates rewrite the full persisted snapshot. | Flush new documents to a separate immutable index file. |
+| Manual segment merge | Many small immutable segments add fixed work to reads. | Rebuild all persisted documents into one replacement segment. |
 
 ## Current ranking
 
@@ -190,7 +192,33 @@ across segments.
 
 The earlier full snapshot re-saves took seconds and rewrote about 25 MB for
 the same update sizes. Segment flush writes only the new index data. There is
-no automatic flush threshold, manifest, deletion, merge, or compaction yet.
+no automatic flush threshold, manifest, or background work.
+
+## Manual segment merge
+
+Many small segments make a query inspect many independent indexes. At 1,000
+segments, a rare-term query spent visible time on per-segment lookup even
+though almost every segment had no match.
+
+`mergeAllSegments()` is an explicit operation. It rebuilds a new in-memory
+index from the documents in all persisted segments, writes one new segment,
+registers it, then removes the old files. The new file is written before any
+old file is removed, so a failed write does not discard the existing segments.
+The mutable index is not part of this operation.
+
+The same 100K-document corpus was measured before and after merging 1,000
+100-document segments. Each query used three warmup runs and five measured
+runs.
+
+| State | Segments | Rare query | Common query | Load time |
+| --- | ---: | ---: | ---: | ---: |
+| Before merge | 1K | 1.953 ms | 58.300 ms | 2660.841 ms |
+| After merge | 1 | 0.011 ms | 37.433 ms | 1639.838 ms |
+
+The merge itself took 51856.969 ms and produced a 13.578 MB segment. It
+reduces read amplification, but it rewrites existing data. Merging remains
+manual: MiniSearch has no threshold, selection policy, scheduler, or
+background merge.
 
 ## Phrase search
 
@@ -224,7 +252,8 @@ answer whether a document satisfies a condition rather than how relevant it is.
   `searchAndNot`; quotation-mark parsing, parentheses, and a general query
   parser are not supported.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
-- Persistence rewrites and reloads one complete index file.
+- `IndexStorage` rewrites and reloads one complete snapshot file. Segment
+  flushes write only new data; manual segment merge rewrites persisted data.
 - Cross-segment ranked search uses document-ID order until global BM25
   collection statistics are introduced.
 - Re-indexing an existing document ID is not supported as an update.

@@ -18,6 +18,7 @@ deliberately basic: lowercase text and split on whitespace.
 - Case-insensitive prefix suggestions: `suggest("distr", 10)`
 - Single-file save and load through `IndexStorage`
 - Explicit immutable-segment flushes through `SegmentedSearchEngine`
+- Explicit merging of persisted segments through `mergeAllSegments()`
 
 Keyword queries use OR behavior. Phrase and Boolean queries are separate APIs;
 there is no query parser, quotation syntax, or parentheses.
@@ -42,7 +43,7 @@ List<Document> results = loaded.search("distributed systems", 10);
 
 Loading reconstructs the in-memory structure; queries are not served directly
 from disk. Save rewrites the complete file. The snapshot format has no WAL,
-background flush, merge, compression, or recovery.
+background flush, compression, or recovery.
 
 For small incremental writes, `SegmentedSearchEngine` keeps a mutable index
 and writes it to a new immutable file when `flush()` is called:
@@ -51,11 +52,13 @@ and writes it to a new immutable file when `flush()` is called:
 SegmentedSearchEngine segments = new SegmentedSearchEngine(Path.of("segments"));
 segments.add(document);
 segments.flush();
+segments.mergeAllSegments(); // Explicitly merge persisted segments into one.
 ```
 
 Existing segment files are never modified. Segment queries combine all flushed
 segments and mutable documents by document ID. Cross-segment BM25 ranking is
 not implemented yet because each segment currently has local statistics.
+Merging is manual; there is no automatic threshold or background merge policy.
 
 ## Requirements
 
@@ -99,6 +102,7 @@ java -cp build/classes/java/main minisearch.TopResultsExperiment
 java -cp build/classes/java/main minisearch.AutocompleteExperiment
 java -cp build/classes/java/main minisearch.PersistenceExperiment
 java -cp build/classes/java/main minisearch.SegmentFlushExperiment
+java -cp build/classes/java/main minisearch.SegmentMergeExperiment
 ```
 
 The experiments measure only the question they are intended to explore:
@@ -108,6 +112,7 @@ The experiments measure only the question they are intended to explore:
   lower-bound lookup. The public `suggest` method still uses the full scan.
 - Persistence records single-file save time, load time, and file size.
 - Segment flush records the cost and size of writing only new indexed data.
+- Segment merge compares 1,000 small segments with one merged replacement.
 
 See [docs/architecture.md](docs/architecture.md) for the measured baselines and
 the reasoning behind each step, and [docs/learning-journal.md](docs/learning-journal.md)
@@ -118,6 +123,7 @@ for the learning record.
 - The loaded index is still entirely in memory.
 - Punctuation is not removed, so `redis,` and `redis` are different terms.
 - Autocomplete scans every indexed vocabulary term for each prefix request.
-- Persistence rewrites and reloads one complete index file.
+- Single-file persistence rewrites and reloads one complete index file.
+- Segment merging is explicit and rewrites all persisted segments into one.
 - Segment queries use document-ID order across segments, not global BM25 ranking.
 - Adding the same document ID again is not supported as an update.

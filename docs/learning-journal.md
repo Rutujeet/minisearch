@@ -220,4 +220,36 @@ warmup runs and five measured runs.
 At 1,000 segments, even the rare query must visit many independent indexes and
 is noticeably slower than the smaller-segment-count cases. This is read
 amplification: immutable segments fix whole-snapshot rewrites but add read and
-startup work as segment count grows. No merge policy has been chosen yet.
+startup work as segment count grows.
+
+## Manual segment merge
+
+### Problem
+
+The fixed 100K-document corpus showed visible rare-query overhead at 1,000
+segments. Most segments had no match, but every segment still had to be
+checked.
+
+### New design
+
+`mergeAllSegments()` rebuilds all persisted documents into one new immutable
+segment using the existing indexing path. It writes the replacement before
+registering it and deleting the old segment files. The mutable index stays
+separate.
+
+### Evidence
+
+| State | Segments | Rare query | Common query | Load |
+| --- | ---: | ---: | ---: | ---: |
+| Before merge | 1K | 1.953 ms | 58.300 ms | 2660.841 ms |
+| After merge | 1 | 0.011 ms | 37.433 ms | 1639.838 ms |
+
+Merging 1,000 segments containing 100K documents took 51856.969 ms and wrote
+a 13.578 MB replacement segment.
+
+### Tradeoffs
+
+Manual merging reduces read amplification, but it reads and rewrites old data,
+creating write amplification again. There is no automatic merge policy,
+background scheduler, posting-level merge, or global cross-segment BM25
+statistics yet.

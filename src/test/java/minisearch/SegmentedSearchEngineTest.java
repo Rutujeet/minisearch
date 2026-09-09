@@ -2,11 +2,15 @@ package minisearch;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,5 +54,38 @@ class SegmentedSearchEngineTest {
         searchEngine.flush();
 
         assertArrayEquals(firstSegmentBytes, Files.readAllBytes(firstSegment));
+    }
+
+    @Test
+    void mergeAllSegmentsPreservesDocumentsAndReplacesOldFiles() throws IOException {
+        SegmentedSearchEngine searchEngine = new SegmentedSearchEngine(tempDir);
+        Document first = new Document(1, "First", "distributed distributed systems java concurrency");
+        Document second = new Document(2, "Second", "redis distribution java spring");
+        Document third = new Document(3, "Third", "distributed systems java concurrency");
+        searchEngine.add(first);
+        searchEngine.flush();
+        searchEngine.add(second);
+        searchEngine.flush();
+        searchEngine.add(third);
+        List<Path> oldSegments = searchEngine.segmentPaths();
+
+        searchEngine.mergeAllSegments();
+
+        assertEquals(Set.of(1, 2, 3), searchEngine.search("java").stream()
+                .map(Document::id)
+                .collect(Collectors.toSet()));
+        assertEquals(List.of(first, third), searchEngine.searchPhrase("distributed systems"));
+        assertEquals(List.of(first, third), searchEngine.searchAnd("java", "concurrency"));
+        assertEquals(List.of(first, third), searchEngine.searchAndNot("java", "spring"));
+        assertEquals(List.of("distributed", "distribution"), searchEngine.suggest("distr", 10));
+        assertEquals(1, searchEngine.segmentPaths().size());
+        assertTrue(Files.exists(searchEngine.segmentPaths().getFirst()));
+        for (Path oldSegment : oldSegments) {
+            assertFalse(Files.exists(oldSegment));
+        }
+
+        searchEngine.flush();
+        SegmentedSearchEngine restarted = new SegmentedSearchEngine(tempDir);
+        assertEquals(List.of(first, second, third), restarted.search("java"));
     }
 }
