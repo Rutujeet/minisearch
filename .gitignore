@@ -13,3 +13,6 @@ out/
 
 # Ignore learning-journey docs
 docs/learning-journey.md
+
+# Downloaded benchmark corpora are not redistributed with the project.
+data/

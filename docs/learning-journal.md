@@ -385,3 +385,25 @@ indexed 100 documents and flushed them in the same run.
 Writes are serialized, and every mutable write copies the current mutable
 index. That is deliberately simple and can become expensive for large mutable
 batches. There are no indexing workers, queues, sharding, or lock-free writes.
+
+## Real-corpus benchmark
+
+### Dataset
+
+The first final run used 100K natural-language citations from the NCBI PubMed
+2026 baseline. Each document uses PMID as its ID, ArticleTitle as title, and
+joined AbstractText sections as body.
+
+### Evidence
+
+On an Intel Core Ultra 7 155H with 22 logical CPUs, 30 GiB RAM, Linux amd64,
+and JDK 21.0.12, MiniSearch indexed 1,331.5 documents/s. Ranked `cancer`
+search measured 2.679 ms p95; phrase search 1.214 ms p95; Boolean search
+1.710 ms p95; and four concurrent readers reached 446.7 queries/s. Full raw
+results are recorded in [benchmarks.md](benchmarks.md).
+
+### Known limitation
+
+`suggest("cardio", 10)` measured 65.139 ms p95 because autocomplete still
+scans the full vocabulary. This is recorded without adding a Trie or another
+autocomplete architecture to v1.
