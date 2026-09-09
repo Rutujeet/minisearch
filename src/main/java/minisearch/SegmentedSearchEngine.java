@@ -52,26 +52,41 @@ public class SegmentedSearchEngine {
     }
 
     /** Rebuilds all immutable segments into one new immutable segment. */
-    public void mergeAllSegments() throws IOException {
+    public MergeTimings mergeAllSegments() throws IOException {
         if (segments.size() < 2) {
-            return;
+            return MergeTimings.empty();
         }
 
-        // ponytail: rebuild documents instead of merging postings; use a posting-level merge only if merge time becomes a problem.
-        IndexedSearchEngine mergedIndex = new IndexedSearchEngine();
+        long start = System.nanoTime();
+        List<Document> documents = new ArrayList<>();
         for (Segment segment : segments) {
             for (StoredDocument document : segment.index().snapshot().documents()) {
-                mergedIndex.add(document.document());
+                documents.add(document.document());
             }
         }
+        long sourceReadNanos = System.nanoTime() - start;
 
+        // ponytail: rebuild documents instead of merging postings; use a posting-level merge only if merge time becomes a problem.
+        start = System.nanoTime();
+        IndexedSearchEngine mergedIndex = new IndexedSearchEngine();
+        for (Document document : documents) {
+            mergedIndex.add(document);
+        }
+        long reindexNanos = System.nanoTime() - start;
+
+        start = System.nanoTime();
         Segment mergedSegment = segmentStorage.write(mergedIndex, nextSegmentPath());
+        long writeNanos = System.nanoTime() - start;
+
+        start = System.nanoTime();
         List<Segment> oldSegments = new ArrayList<>(segments);
         segments.clear();
         segments.add(mergedSegment);
         for (Segment oldSegment : oldSegments) {
             Files.delete(oldSegment.path());
         }
+        long cleanupNanos = System.nanoTime() - start;
+        return new MergeTimings(sourceReadNanos, reindexNanos, writeNanos, cleanupNanos);
     }
 
     public List<Document> search(String query) {
@@ -161,5 +176,16 @@ public class SegmentedSearchEngine {
     private int segmentNumber(Path path) {
         String fileName = path.getFileName().toString();
         return Integer.parseInt(fileName.substring("segment-".length(), fileName.length() - ".bin".length()));
+    }
+
+    /** Timings for the coarse phases of one manual merge. */
+    public record MergeTimings(long sourceReadNanos, long reindexNanos, long writeNanos, long cleanupNanos) {
+        static MergeTimings empty() {
+            return new MergeTimings(0, 0, 0, 0);
+        }
+
+        public long totalNanos() {
+            return sourceReadNanos + reindexNanos + writeNanos + cleanupNanos;
+        }
     }
 }

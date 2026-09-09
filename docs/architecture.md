@@ -220,6 +220,22 @@ reduces read amplification, but it rewrites existing data. Merging remains
 manual: MiniSearch has no threshold, selection policy, scheduler, or
 background merge.
 
+### Merge phase profile
+
+The initial 51.857-second result measured one uninstrumented merge. A later
+coarse profile keeps the same total 100K documents while changing only the
+number of source segments. Segment loading happens when the engine opens, so
+it is shown separately from the merge operation.
+
+| Source layout | Load source segments | Read source documents | Re-index | Write | Cleanup | Merge total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K × 100 docs | 2540.425 ms | 101.558 ms | 125542.718 ms | 4521.357 ms | 20.768 ms | 130186.401 ms |
+| 100 × 1K docs | 2264.701 ms | 28.291 ms | 78561.806 ms | 2982.371 ms | 3.889 ms | 81576.357 ms |
+
+These are exploratory runs, so their absolute times vary. The stable signal is
+that rebuilding the already-indexed documents dominates both layouts. Reading
+documents and handling source files are much smaller costs.
+
 ## Phrase search
 
 `searchPhrase("distributed systems")` looks for those terms next to each

@@ -253,3 +253,35 @@ Manual merging reduces read amplification, but it reads and rewrites old data,
 creating write amplification again. There is no automatic merge policy,
 background scheduler, posting-level merge, or global cross-segment BM25
 statistics yet.
+
+## Manual merge phase profile
+
+### Problem
+
+The first manual merge reduced 1,000 segments to one, but took about 51.9
+seconds for 100K documents. We needed to find out whether the time came from
+opening many files or rebuilding already-indexed content.
+
+### Evidence
+
+The engine loads segment files when it opens, before `mergeAllSegments()`
+runs. That startup work is therefore reported separately. The merge phase
+reads stored documents, indexes them again, writes the replacement segment,
+then deletes the old files.
+
+| Source layout | Load source segments | Read documents | Re-index | Write | Cleanup | Merge total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K × 100 docs | 2540.425 ms | 101.558 ms | 125542.718 ms | 4521.357 ms | 20.768 ms | 130186.401 ms |
+| 100 × 1K docs | 2264.701 ms | 28.291 ms | 78561.806 ms | 2982.371 ms | 3.889 ms | 81576.357 ms |
+
+The absolute times are exploratory and vary between runs. In both layouts,
+re-indexing dominates. Source loading and document recovery are much smaller,
+so the main pain is recomputing tokenization, term frequency, positions, and
+postings that the source segments already store.
+
+### Conclusion
+
+Before adding a merge policy or moving work to a background thread, the next
+question is whether MiniSearch can merge indexed state directly in memory.
+That would remove redundant re-indexing while keeping the same read-all and
+write-one-segment behavior.
