@@ -98,6 +98,29 @@ Compare prepared linear search with indexed lookup on the same generated corpus:
 ./gradlew runExperiment
 ```
 
+## HTTP API
+
+`SearchHttpServer` is a small local JSON boundary over `SegmentedSearchEngine`.
+It has no authentication, pagination, or background jobs.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/documents` | Add `{ "id", "title", "body" }` |
+| `PUT` | `/documents/{id}` | Replace a document |
+| `DELETE` | `/documents/{id}` | Delete a document |
+| `GET` | `/search?q=...&limit=10` | Search documents |
+| `GET` | `/suggest?q=...&limit=10` | Suggest indexed terms |
+
+For example, construct and start it from your application:
+
+```java
+SearchHttpServer server = new SearchHttpServer(engine, 8080);
+server.start();
+```
+
+Requests return JSON. Invalid requests return `400`; unknown paths return
+`404`; unsupported methods return `405`.
+
 ## Experiments
 
 Build the main classes once, then run an experiment directly:
